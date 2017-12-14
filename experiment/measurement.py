@@ -95,8 +95,8 @@ class BaseMeasurement(Metadatable, DelegateAttributes):
         self.pre_measurement_tasks()
         self.setup()
         self.measure()
-        self.postprocess()
         self.cleanup()
+        self.postprocess()
         self.post_measurement_tasks()
 
 
