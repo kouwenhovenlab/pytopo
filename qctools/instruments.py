@@ -1,5 +1,5 @@
 """
-A collection of tools that make life with Qcodes a bit easier.
+A collection of instrument tools that make life with Qcodes a bit easier.
 """
 
 import qcodes as qc
