@@ -11,4 +11,4 @@ data_location = "c:\\data"
 data_location_formatter = "%Y-%m\\%Y-%m-%d\\%H%M%S", "%H%M%S"
 
 # the working directory of our code
-labpython_dir = "C:\\Users\\wopfa\\Code\\labpythonQDelft"
+labpython_dir = ""
