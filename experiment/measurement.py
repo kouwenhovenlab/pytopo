@@ -2,6 +2,11 @@
 This module contains basic measurement classes.
 The stuff in here is not very specific to any kind of
 particular experiment, those typically live in separate modules.
+
+TODO (wpfff) : probably want something like a DataManager class
+    that is responsible for interfacing with data storage.
+    (for future compatibility it might be unwise to have the
+     msmt class talk to the data on too low level...?)
 """
 
 import os
