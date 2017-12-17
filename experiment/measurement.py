@@ -40,9 +40,10 @@ def get_next_data_idx(folder, prefix):
     return "-#" + str(max(idxs) + 1).zfill(DATAIDXPAD)
 
 
-def get_data_loc(name, struct_time=None, makedir=False):
+def get_data_loc(name, struct_time=None, makedirs=False):
     if struct_time is None:
         struct_time = time.localtime()
+    idx = None
 
     datadir = time.strftime(cfg.data_location, struct_time)
     datadir = datadir.replace("{n}", name)
@@ -50,21 +51,38 @@ def get_data_loc(name, struct_time=None, makedir=False):
     datafile_prefix = time.strftime(cfg.datafile_prefix, struct_time)
     datafile_prefix = datafile_prefix.replace("{n}", name)
     if cfg.data_location_idx:
-        datafile_prefix += get_next_data_idx(datadir, datafile_prefix)
+        idx = get_next_data_idx(datadir, datafile_prefix)
+        datafile_prefix += idx
+
+    if cfg.metadata_subdir != "":
+        metadatadir = time.strftime(cfg.metadata_subdir, struct_time)
+        metadatadir = metadatadir.replace("{n}", name)
+        if idx is not None:
+            metadatadir += idx
+        metadatadir = os.path.join(datadir, metadatadir)
+    else:
+        metadatadir = datadir
+    
+    metadatafile_prefix = time.strftime(cfg.datafile_prefix, struct_time)
+    metadatafile_prefix = metadatafile_prefix.replace("{n}", name)
+    if idx is not None:
+        metadatafile_prefix += idx
+
+    if makedirs:
+        if not os.path.exists(datadir):
+            os.makedirs(datadir)
+        if cfg.metadata_subdir != '':
+            if not os.path.exists(metadatadir):
+                os.makedirs(metadatadir)
 
     ret = {
         'data_folder' : datadir,
         'datafile_prefix' : datafile_prefix,
+        'metadata_folder' : metadatadir,
+        'metadata_prefix' : metadatafile_prefix,
     }
 
     return ret
-
-# class BaseExperimentData(object):
-#     def __init__(self, name, **kwargs):
-#         self.name = name
-
-#     def add_data(self, **kwargs):
-#         raise NotImplementedError
 
 
 class Parameter(_BaseParameter):
@@ -91,34 +109,33 @@ class BaseMeasurement(InstrumentBase):
 
     def save_metadata(self):
         station_snap = self.station.snapshot()
-        with open(self.dataloc_prefix + "_station.json", 'w') as f:
+        with open(self.metadata_prefix + "_station.json", 'w') as f:
             json.dump(station_snap, f, indent=4)
 
         msmt_snap = self.snapshot()
-        with open(self.dataloc_prefix + "_measurement.json", 'w') as f:
+        with open(self.metadata_prefix + "_measurement.json", 'w') as f:
             json.dump(msmt_snap, f, indent=4)
 
 
-    def _get_data_location(self):
+    def _get_data_location(self, makedirs=True):
         """
         Find the folder on the file system where we will store all
         data and metadata coming from the measurement.
         """
-        info = get_data_loc(self.name)
-        self.dataloc_folder = info['data_folder']
+        info = get_data_loc(self.name, makedirs=makedirs)
+        self.data_folder = info['data_folder']
         self.datafile_prefix = info['datafile_prefix']
-        self.dataloc_prefix = os.path.join(self.dataloc_folder, self.datafile_prefix)
-        print(self.dataloc_prefix)
+        self.data_prefix = os.path.join(self.data_folder, self.datafile_prefix)
+        self.metadata_folder = info['metadata_folder']
+        self.metadatafile_prefix = info['metadata_prefix']
+        self.metadata_prefix = os.path.join(self.metadata_folder, self.metadatafile_prefix)
+        
 
     def init_data(self):
         """
         Initialize the internal data object.
         """
-        self._get_data_location()
-        if os.path.exists(self.dataloc_folder):
-            logging.info("Data folder {} already exists.".format(self.dataloc_folder))
-        else:
-            os.makedirs(self.dataloc_folder)
+        self._get_data_location(makedirs=True)
 
     def pre_measurement_tasks(self):
         self.init_data()
