@@ -13,6 +13,8 @@ import os
 import time
 import logging
 import json
+import xarray as xr
+
 from qcodes.utils.helpers import DelegateAttributes, full_class
 from qcodes.utils.metadata import Metadatable
 from qcodes.instrument.base import InstrumentBase
@@ -107,16 +109,6 @@ class BaseMeasurement(InstrumentBase):
 
         self._meta_attrs = ['name']
 
-    def save_metadata(self):
-        station_snap = self.station.snapshot()
-        with open(self.metadata_prefix + "_station.json", 'w') as f:
-            json.dump(station_snap, f, indent=4)
-
-        msmt_snap = self.snapshot()
-        with open(self.metadata_prefix + "_measurement.json", 'w') as f:
-            json.dump(msmt_snap, f, indent=4)
-
-
     def _get_data_location(self, makedirs=True):
         """
         Find the folder on the file system where we will store all
@@ -136,12 +128,31 @@ class BaseMeasurement(InstrumentBase):
         Initialize the internal data object.
         """
         self._get_data_location(makedirs=True)
+        self.datafilepath = self.data_prefix + ".hdf5"
 
+        self.dataset = xr.Dataset()
+        self.save_data()
+
+    def save_metadata(self):
+        station_snap = self.station.snapshot()
+        with open(self.metadata_prefix + "_station.json", 'w') as f:
+            json.dump(station_snap, f, indent=4)
+
+        msmt_snap = self.snapshot()
+        with open(self.metadata_prefix + "_measurement.json", 'w') as f:
+            json.dump(msmt_snap, f, indent=4)
+
+    def save_data(self):
+        mode = 'a' if os.path.exists(self.datafilepath) else 'w'
+        self.dataset.to_netcdf(self.datafilepath, mode)
+    
     def pre_measurement_tasks(self):
         self.init_data()
-
+    
     def post_measurement_tasks(self):
+        self.save_data()
         self.save_metadata()
+
 
     def run(self):
         """
