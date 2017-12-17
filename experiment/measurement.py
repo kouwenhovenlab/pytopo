@@ -144,7 +144,7 @@ class BaseMeasurement(InstrumentBase):
 
     def save_data(self):
         mode = 'a' if os.path.exists(self.datafilepath) else 'w'
-        self.dataset.to_netcdf(self.datafilepath, mode)
+        self.dataset.to_netcdf(self.datafilepath, mode, format='NETCDF4')
     
     def pre_measurement_tasks(self):
         self.init_data()
