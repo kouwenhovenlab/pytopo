@@ -64,7 +64,7 @@ def get_data_loc(name, struct_time=None, makedirs=False):
         metadatadir = os.path.join(datadir, metadatadir)
     else:
         metadatadir = datadir
-    
+
     metadatafile_prefix = time.strftime(cfg.datafile_prefix, struct_time)
     metadatafile_prefix = metadatafile_prefix.replace("{n}", name)
     if idx is not None:
@@ -121,7 +121,7 @@ class BaseMeasurement(InstrumentBase):
         self.metadata_folder = info['metadata_folder']
         self.metadatafile_prefix = info['metadata_prefix']
         self.metadata_prefix = os.path.join(self.metadata_folder, self.metadatafile_prefix)
-        
+
 
     def init_data(self):
         """
@@ -130,8 +130,8 @@ class BaseMeasurement(InstrumentBase):
         self._get_data_location(makedirs=True)
         self.datafilepath = self.data_prefix + ".hdf5"
 
-        self.dataset = xr.Dataset()
-        self.save_data()
+        # self.dataset = xr.Dataset()
+        # self.save_data()
 
     def save_metadata(self):
         station_snap = self.station.snapshot()
@@ -143,12 +143,13 @@ class BaseMeasurement(InstrumentBase):
             json.dump(msmt_snap, f, indent=4)
 
     def save_data(self):
-        mode = 'a' if os.path.exists(self.datafilepath) else 'w'
-        self.dataset.to_netcdf(self.datafilepath, mode, format='NETCDF4')
-    
+        # mode = 'a' if os.path.exists(self.datafilepath) else 'w'
+        # self.dataset.to_netcdf(self.datafilepath, mode, format='NETCDF4')
+        pass
+
     def pre_measurement_tasks(self):
         self.init_data()
-    
+
     def post_measurement_tasks(self):
         self.save_data()
         self.save_metadata()
