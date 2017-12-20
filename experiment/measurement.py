@@ -43,8 +43,9 @@ class Parameter(_BaseParameter):
 
 class BaseMeasurement(InstrumentBase):
 
-    def __init__(self, station):
+    def __init__(self, station, namespace):
         self.station = station
+        self.namespace = namespace
         name = self.__class__.__name__
         super().__init__(name)
 
@@ -116,6 +117,7 @@ class BaseMeasurement(InstrumentBase):
         self._get_data_location(makedirs=True)
         self.datafilepath = self.data_prefix + ".hdf5"
         self.data = Data(self.datafilepath)
+        self.data.spyview_prefix = self.metadata_prefix
 
     def save_metadata(self):
         station_snap = self.station.snapshot()
@@ -166,7 +168,9 @@ class Data(NpStorage):
     def __init__(self, filepath):
         super().__init__()
         self.filepath = filepath
+
         self.export_spyview = True
+        self.spyview_prefix = os.path.splitext(self.filepath)[0]
 
 
     @staticmethod
@@ -216,6 +220,7 @@ class Data(NpStorage):
         data = Data.flatten_page(self[pagename], invert_axis_order=True)
         info = Data.meta_info(data)
         names = [n for n in data.dtype.fields]
+        naxes = len(names[:-1])
         with open(fn, 'w') as f:
             for idx, n in enumerate(names[:-1]):
                 m = info[n]
@@ -223,6 +228,9 @@ class Data(NpStorage):
                                                   m['values'][0],
                                                   m['values'][-1],
                                                   n))
+            for i in range(3 - naxes):
+                f.write("{}\n{}\n{}\n{}\n".format(1,0,0,'None'))
+
             f.write("{}\n{}\n".format(idx+2, names[-1]))
 
 
@@ -231,7 +239,14 @@ class Data(NpStorage):
 
         data = Data.flatten_page(page, invert_axis_order=True)
         names = [n for n in data.dtype.fields]
-        pagename = names[-1]
+        naxes = len(names[:-1])
+
+        if names[-1] in self._pages:
+            pagename = names[-1]
+        elif names[-1].split(' [')[0] in self._pages:
+            pagename = names[-1].split(' [')[0]
+        else:
+            raise ValueError("Cannot find page corresponding to this data.")
 
         alldata = Data.flatten_page(self[pagename], invert_axis_order=True)
         col0_start = alldata[names[0]][0]
@@ -273,5 +288,5 @@ class Data(NpStorage):
                 d[-arr.size:] = arr
 
                 if self.export_spyview:
-                    spyview_fn = os.path.splitext(self.filepath)[0] + "_{}.dat".format(name)
+                    spyview_fn = self.spyview_prefix + "_{}.dat".format(name)
                     self.write_spyview_data(spyview_fn, arr)
