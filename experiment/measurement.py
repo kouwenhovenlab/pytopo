@@ -20,6 +20,7 @@ import numpy as np
 from qcodes.instrument.base import InstrumentBase
 from qcodes.instrument.parameter import _BaseParameter
 
+from pysweep.sweep_object import sweep, ChainSweep
 from pysweep.data_storage import NpStorage
 
 import labpythonconfig as cfg
@@ -162,6 +163,17 @@ class BaseMeasurement(InstrumentBase):
 
     def cleanup(self):
         pass
+
+
+class PysweepMeasurement(BaseMeasurement):
+    """
+    A simple prototype for how we could write a measurement around pysweep loops.
+    """
+
+    def measure(self):
+        for rec in ChainSweep([self.sweep()]):
+            self.data.add(rec)
+
 
 
 class Data(NpStorage):
