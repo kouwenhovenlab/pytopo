@@ -33,8 +33,11 @@ class Data(BaseStorage):
 
     @staticmethod
     def get_axes_names(page):
-        n = Data.get_column_names(page)
-        return n[:-1]
+        return Data.get_column_names(page)[:-1]
+
+    @staticmethod
+    def get_data_name(page):
+        return Data.get_column_names(page)[-1]
 
 
     @staticmethod
@@ -170,46 +173,40 @@ class GridData(Data):
 
     def __init__(self, filepath):
         super().__init__(filepath)
-        self.grids = {}
 
     def __getitem__(self, item):
-        if item in self.grids:
-            return self.get_griddata(item, mode=self.grid_fit_mode, fill=self.grid_fill_val),\
-                self.grids[item]['coords']
-        else:
-            return super().__getitem__(item)
+        return self.get_griddata(item, mode=self.grid_fit_mode, fill=self.grid_fill_val)
+
 
     @staticmethod
-    def _coord_status(measured, full):
+    def _coord_status(measured):
         _pts, _reps = np.unique(measured, return_counts=True)
-        max_idx = np.where(_pts[-1] == full)[0][0]
+        max_idx = _pts.size - 1
         missing = np.max(_reps) - np.min(_reps)
         return dict(max_idx=max_idx, missing_for_rect=missing)
 
-    def get_coord_status(self):
-        coords = [(n, v['coords']) for n, v in self.grids.items()]
-        info = {}
-        for n, v in coords:
-            tbl = GridData.flatten_page(self._pages[n])
-            info[n] = [(cn, GridData._coord_status(tbl[cn], cv)) for cn, cv in v]
-        return info
 
     def get_griddata(self, name, mode='outer', fill=np.nan):
         tbl = GridData.flatten_page(self._pages[name])
-        info = [(cn, GridData._coord_status(tbl[cn], cv)) for cn, cv in self.grids[name]['coords']]
+        cnames = GridData.get_axes_names(self._pages[name])
+        dname = GridData.get_data_name(self._pages[name])
+
+        info = [(cn, GridData._coord_status(tbl[cn])) for cn in cnames]
 
         if mode == 'outer':
             gridshape = tuple([v['max_idx']+1 for n, v in info])
             gridsize = np.prod(gridshape)
 
             if gridsize > tbl.size:
-                grid = np.concatenate((tbl[name], np.ones(gridsize-tbl.size) * fill)).reshape(gridshape, order='F')
+                grid = np.concatenate((tbl[dname], np.ones(gridsize-tbl.size) * fill)).reshape(gridshape, order='F')
             elif gridsize == tbl.size:
-                grid = tbl[name].reshape(gridshape, order='F')
+                grid = tbl[dname].reshape(gridshape, order='F')
             else:
                 raise ValueError("Something unlikely happened: determined grid < data!?")
+
+            axes = [(cn, np.unique(tbl[cn])) for cn in cnames]
 
         else:
             raise ValueError("Invalid gridding-mode. Only 'outer' is supported at the moment.")
 
-        return grid
+        return grid, axes
