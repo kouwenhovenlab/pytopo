@@ -18,8 +18,9 @@ from qcodes.instrument.parameter import _BaseParameter
 
 from pysweep.sweep_object import sweep, ChainSweep
 
-from data.data_storage import Data
 import labpythonconfig as cfg
+
+from ..data.data_storage import Data
 
 
 DATAIDXPAD = 4
@@ -38,6 +39,8 @@ class Parameter(_BaseParameter):
 
 
 class BaseMeasurement(InstrumentBase):
+
+    data_cls = Data
 
     def __init__(self, station, namespace):
         self.station = station
