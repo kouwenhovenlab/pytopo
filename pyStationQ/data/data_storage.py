@@ -150,7 +150,7 @@ class Data(BaseStorage):
                 g = f
 
             for name, arr in pages.items():
-                if name in f:
+                if name in g:
                     d = g[name]
                 else:
                     d = g.create_dataset(name, (0,), maxshape=(None,), dtype=arr.dtype, chunks=True)
