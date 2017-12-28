@@ -21,7 +21,7 @@ from qcodes.instrument.base import InstrumentBase
 from qcodes.instrument.parameter import _BaseParameter
 
 from pysweep.sweep_object import sweep, ChainSweep
-from pysweep.data_storage import NpStorage
+from pysweep.data_storage import BaseStorage
 
 import labpythonconfig as cfg
 
@@ -165,28 +165,29 @@ class BaseMeasurement(InstrumentBase):
         pass
 
 
-class PysweepMeasurement(BaseMeasurement):
-    """
-    A simple prototype for how we could write a measurement around pysweep loops.
-    """
-
-    def measure(self):
-        for rec in ChainSweep([self.sweep()]):
-            self.data.add(rec)
 
 
 
-class Data(NpStorage):
+
+class Data(BaseStorage):
+
+    hdf5_raw_group = 'raw'
+
     def __init__(self, filepath):
         super().__init__()
         self.filepath = filepath
+        self.shapes = dict()
 
-        self.export_spyview = True
-        self.spyview_prefix = os.path.splitext(self.filepath)[0]
+        if filepath is not None:
+            self.export_spyview = True
+            self.spyview_prefix = os.path.splitext(self.filepath)[0]
+        else:
+            self.export_spyview = False
+            self.spyview_prefix = 'spyview'
 
 
     @staticmethod
-    def flatten_page(page, invert_axis_order=True):
+    def flatten_page(page, invert_axis_order=False):
         names = [n for n in page.dtype.fields]
         if invert_axis_order:
             names = names[:-1][::-1] + [names[-1]]
@@ -229,7 +230,7 @@ class Data(NpStorage):
 
 
     def write_spyview_meta(self, fn, pagename):
-        data = Data.flatten_page(self[pagename], invert_axis_order=True)
+        data = Data.flatten_page(self[pagename], invert_axis_order=False)
         info = Data.meta_info(data)
         names = [n for n in data.dtype.fields]
         naxes = len(names[:-1])
@@ -249,7 +250,7 @@ class Data(NpStorage):
     def write_spyview_data(self, fn, page):
         isnewfile = not os.path.exists(fn)
 
-        data = Data.flatten_page(page, invert_axis_order=True)
+        data = Data.flatten_page(page, invert_axis_order=False)
         names = [n for n in data.dtype.fields]
         naxes = len(names[:-1])
 
@@ -260,7 +261,7 @@ class Data(NpStorage):
         else:
             raise ValueError("Cannot find page corresponding to this data.")
 
-        alldata = Data.flatten_page(self[pagename], invert_axis_order=True)
+        alldata = Data.flatten_page(self[pagename], invert_axis_order=False)
         col0_start = alldata[names[0]][0]
 
         metafn = os.path.splitext(fn)[0] + ".meta.txt"
@@ -278,7 +279,7 @@ class Data(NpStorage):
 
     def add(self, record, write=True):
         super().add(record)
-        if write:
+        if write and self.filepath is not None:
             self.write(record)
 
 
@@ -289,11 +290,19 @@ class Data(NpStorage):
             else:
                 pages = self.record_to_pages(record)
 
+            if self.hdf5_raw_group is not None:
+                if self.hdf5_raw_group in f:
+                    g = f[self.hdf5_raw_group]
+                else:
+                    g = f.create_group(self.hdf5_raw_group)
+            else:
+                g = f
+
             for name, arr in pages.items():
                 if name in f:
-                    d = f[name]
+                    d = g[name]
                 else:
-                    d = f.create_dataset(name, (0,), maxshape=(None,), dtype=arr.dtype, chunks=True)
+                    d = g.create_dataset(name, (0,), maxshape=(None,), dtype=arr.dtype, chunks=True)
 
                 newlen = d.size + arr.size
                 d.resize((newlen,))
