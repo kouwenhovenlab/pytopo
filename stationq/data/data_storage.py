@@ -32,7 +32,7 @@ class Data(BaseStorage):
 
 
     @staticmethod
-    def get_axes_names(page):
+    def get_coord_names(page):
         return Data.get_column_names(page)[:-1]
 
     @staticmethod
@@ -166,13 +166,16 @@ class Data(BaseStorage):
                     spyview_fn = self.spyview_prefix + "_{}.dat".format(name)
                     self.write_spyview_data(spyview_fn, arr)
 
+
 class GridData(Data):
 
     grid_fit_mode = 'outer'
     grid_fill_val = np.nan
+    autowrite_griddata = True
 
     def __init__(self, filepath):
         super().__init__(filepath)
+
 
     def __getitem__(self, item):
         return self.get_griddata(item, mode=self.grid_fit_mode, fill=self.grid_fill_val)
@@ -188,7 +191,7 @@ class GridData(Data):
 
     def get_griddata(self, name, mode='outer', fill=np.nan):
         tbl = GridData.flatten_page(self._pages[name])
-        cnames = GridData.get_axes_names(self._pages[name])
+        cnames = GridData.get_coord_names(self._pages[name])
         dname = GridData.get_data_name(self._pages[name])
 
         info = [(cn, GridData._coord_status(tbl[cn])) for cn in cnames]
@@ -204,9 +207,41 @@ class GridData(Data):
             else:
                 raise ValueError("Something unlikely happened: determined grid < data!?")
 
-            axes = [(cn, np.unique(tbl[cn])) for cn in cnames]
+            coords = [(cn, np.unique(tbl[cn])) for cn in cnames]
 
         else:
             raise ValueError("Invalid gridding-mode. Only 'outer' is supported at the moment.")
 
-        return grid, axes
+        return grid, coords
+
+
+    def save_griddata(self, name, *arg, **kw):
+        subgrp = kw.pop('subgroup', 'grid')
+
+        grid, coords = self.get_griddata(name, *arg, **kw)
+        dname = GridData.get_data_name(self._pages[name])
+        cnames = GridData.get_coord_names(self._pages[name])
+        
+        with h5py.File(self.filepath, 'a') as f:
+            if subgrp not in f:
+                f.create_group(subgrp)
+            g = f[subgrp]
+            
+            if dname in g:
+                del g[dname]
+            g[dname] = grid
+            g[dname].attrs['coords'] = [n.encode('utf8') for n in cnames]
+            g[dname].attrs['is_coord'] = False
+            
+            for cn, cv in coords:
+                if cn in g:
+                    del g[cn]
+                g[cn] = cv
+                g[cn].attrs['is_coord'] = True
+
+    def write(self, record=None):
+        super().write(record)
+        if self.autowrite_griddata:
+            for n in self._pages:
+                self.save_griddata(n)
+            

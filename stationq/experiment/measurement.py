@@ -20,7 +20,7 @@ from pysweep.sweep_object import sweep, ChainSweep
 
 import labpythonconfig as cfg
 
-from ..data.data_storage import Data
+from ..data.data_storage import Data, GridData
 
 
 DATAIDXPAD = 4
@@ -161,3 +161,23 @@ class BaseMeasurement(InstrumentBase):
 
     def cleanup(self):
         pass
+
+
+class PysweepGrid(BaseMeasurement):
+    
+    data_cls = GridData
+
+    def __init__(self, *arg, **kw):
+        super().__init__(*arg, **kw)
+
+        self.sweep = []
+
+    
+    def measure(self):
+        swp = []
+        for p, vals in self.sweep:
+            swp.append(sweep(p, vals))
+        swp.append(self.measure_datapoint)
+        
+        for rec in ChainSweep([tuple(swp)]):
+            self.data.add(rec)
