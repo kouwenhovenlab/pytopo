@@ -12,6 +12,8 @@ TODO (wpfff) : probably want something like a DataManager class
 import os
 import time
 import json
+import logging
+from IPython import get_ipython
 
 from qcodes.instrument.base import InstrumentBase
 from qcodes.instrument.parameter import _BaseParameter
@@ -22,6 +24,8 @@ import labpythonconfig as cfg
 
 from ..data.data_storage import Data, GridData
 
+
+logger = logging.getLogger('measurement')
 
 DATAIDXPAD = 4
 
@@ -118,6 +122,7 @@ class BaseMeasurement(InstrumentBase):
         self.data = self.data_cls(self.datafilepath)
         self.data.spyview_prefix = self.metadata_prefix
 
+
     def save_metadata(self):
         station_snap = self.station.snapshot()
         with open(self.metadata_prefix + "_station.json", 'w') as f:
@@ -126,6 +131,9 @@ class BaseMeasurement(InstrumentBase):
         msmt_snap = self.snapshot()
         with open(self.metadata_prefix + "_measurement.json", 'w') as f:
             json.dump(msmt_snap, f, indent=4)
+
+        ipython = get_ipython()
+        ipython.magic("%notebook -e {self.metadata_prefix}_notebook.ipynb")
 
 
     def pre_measurement_tasks(self):
@@ -141,11 +149,15 @@ class BaseMeasurement(InstrumentBase):
         This is the function used to execute the measurement.
         """
         self.pre_measurement_tasks()
+        logger.info('Ready to measure, file location: {}...'.format(self.data_prefix))
+
         self.setup()
         self.measure()
+        logger.info('Measurement finished, cleaning up...')
         self.cleanup()
         self.postprocess()
         self.post_measurement_tasks()
+        logger.info('All done!')
 
 
     # These are the functions that each measurement can implement.
@@ -164,20 +176,24 @@ class BaseMeasurement(InstrumentBase):
 
 
 class PysweepGrid(BaseMeasurement):
-    
+
     data_cls = GridData
 
-    def __init__(self, *arg, **kw):
-        super().__init__(*arg, **kw)
+    def __init__(self, station, namespace):
+        super().__init__(station, namespace)
 
         self.sweep = []
 
-    
+
+    def measure_datapoint(self):
+        raise NotImplementedError
+
+
     def measure(self):
         swp = []
         for p, vals in self.sweep:
             swp.append(sweep(p, vals))
         swp.append(self.measure_datapoint)
-        
+
         for rec in ChainSweep([tuple(swp)]):
             self.data.add(rec)

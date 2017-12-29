@@ -173,7 +173,7 @@ class GridData(Data):
 
     grid_fit_mode = 'outer'
     grid_fill_val = np.nan
-    autowrite_griddata = True
+    autowrite_griddata = False
 
     def __init__(self, filepath):
         super().__init__(filepath)
@@ -246,3 +246,8 @@ class GridData(Data):
         if self.autowrite_griddata:
             for n in self._pages:
                 self.save_griddata(n)
+
+
+    def postprocess(self):
+        for n in self._pages:
+            self.save_griddata(n)

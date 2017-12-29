@@ -5,8 +5,8 @@ from qcodes.instrument_drivers.AlazarTech.acq_controllers import ATS9360Controll
 from qcodes.instrument_drivers.AlazarTech.acq_controllers.\
     alazar_channel import AlazarChannel
 
-from qctools import instruments as instools
-from experiment.measurement import Parameter, BaseMeasurement
+from ..qctools import instruments as instools
+from ..experiment.measurement import Parameter, BaseMeasurement
 
 
 class AlazarMeasurement(BaseMeasurement):
