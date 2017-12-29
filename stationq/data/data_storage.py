@@ -91,10 +91,12 @@ class Data(BaseStorage):
         with open(fn, 'w') as f:
             for idx, n in enumerate(names[:-1]):
                 m = info[n]
+                if idx != 1:
+                    v0, v1 = m['values'][0], m['values'][-1]
+                else:
+                    v0, v1 = m['values'][-1], m['values'][0]
                 f.write("{}\n{}\n{}\n{}\n".format(m['values'].size,
-                                                  m['values'][0],
-                                                  m['values'][-1],
-                                                  n))
+                                                  v0, v1, n))
             for i in range(3 - naxes):
                 f.write("{}\n{}\n{}\n{}\n".format(1,0,0,'None'))
 
@@ -221,18 +223,18 @@ class GridData(Data):
         grid, coords = self.get_griddata(name, *arg, **kw)
         dname = GridData.get_data_name(self._pages[name])
         cnames = GridData.get_coord_names(self._pages[name])
-        
+
         with h5py.File(self.filepath, 'a') as f:
             if subgrp not in f:
                 f.create_group(subgrp)
             g = f[subgrp]
-            
+
             if dname in g:
                 del g[dname]
             g[dname] = grid
             g[dname].attrs['coords'] = [n.encode('utf8') for n in cnames]
             g[dname].attrs['is_coord'] = False
-            
+
             for cn, cv in coords:
                 if cn in g:
                     del g[cn]
@@ -244,4 +246,3 @@ class GridData(Data):
         if self.autowrite_griddata:
             for n in self._pages:
                 self.save_griddata(n)
-            
