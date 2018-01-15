@@ -176,7 +176,9 @@ class BaseMeasurement(InstrumentBase):
         raise NotImplementedError
 
     def postprocess(self):
-        pass
+        if self.data_cls == GridData:
+            for n in self.data._pages:
+                self.data.save_griddata(n)
 
     def cleanup(self):
         pass
@@ -205,7 +207,3 @@ class PysweepGrid(BaseMeasurement):
         for rec in ChainSweep([tuple(swp)]):
             self.data.add(rec)
 
-
-    def postprocess(self):
-        for n in self.data._pages:
-            self.data.save_griddata(n)
