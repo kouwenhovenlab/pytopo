@@ -46,12 +46,13 @@ class BaseMeasurement(InstrumentBase):
 
     data_cls = Data
 
-    def __init__(self, station, namespace):
+    def __init__(self, station, namespace, info_string=None):
         self.station = station
         self.namespace = namespace
         name = self.__class__.__name__
         super().__init__(name)
 
+        self.info_string = info_string
         self._meta_attrs = ['name']
 
     @staticmethod
@@ -88,6 +89,8 @@ class BaseMeasurement(InstrumentBase):
             self.datafile_prefix += idx
 
         self.data_prefix = os.path.join(self.datadir, self.datafile_prefix)
+        if self.info_string is not None:
+            self.data_prefix += f"_{self.info_string}"
 
         if cfg.metadata_subdir != "":
             self.metadatadir = time.strftime(cfg.metadata_subdir, struct_time)
@@ -95,6 +98,8 @@ class BaseMeasurement(InstrumentBase):
             if idx is not None:
                 self.metadatadir += idx
             self.metadatadir = os.path.join(self.datadir, self.metadatadir)
+            if self.info_string is not None:
+                self.metadatadir += f"_{self.info_string}"
         else:
             self.metadatadir = self.datadir
 
@@ -104,6 +109,8 @@ class BaseMeasurement(InstrumentBase):
             self.metadatafile_prefix += idx
 
         self.metadata_prefix = os.path.join(self.metadatadir, self.metadatafile_prefix)
+        if self.info_string is not None:
+            self.metadata_prefix += f"_{self.info_string}"
 
         if makedirs:
             if not os.path.exists(self.datadir):
@@ -179,8 +186,8 @@ class PysweepGrid(BaseMeasurement):
 
     data_cls = GridData
 
-    def __init__(self, station, namespace):
-        super().__init__(station, namespace)
+    def __init__(self, station, namespace, *arg, **kw):
+        super().__init__(station, namespace, *arg, **kw)
 
         self.sweep = []
 
@@ -197,3 +204,8 @@ class PysweepGrid(BaseMeasurement):
 
         for rec in ChainSweep([tuple(swp)]):
             self.data.add(rec)
+
+
+    def postprocess(self):
+        for n in self.data._pages:
+            self.data.save_griddata(n)
