@@ -11,14 +11,14 @@ from pysweep.data_storage import BaseStorage
 class Data(BaseStorage):
 
     hdf5_raw_group = 'raw'
+    export_spyview = True
 
     def __init__(self, filepath):
         super().__init__()
         self.filepath = filepath
         self.shapes = dict()
 
-        if filepath is not None:
-            self.export_spyview = True
+        if filepath is not None and self.export_spyview:
             self.spyview_prefix = os.path.splitext(self.filepath)[0]
         else:
             self.export_spyview = False
@@ -247,7 +247,3 @@ class GridData(Data):
             for n in self._pages:
                 self.save_griddata(n)
 
-
-    def postprocess(self):
-        for n in self._pages:
-            self.save_griddata(n)
