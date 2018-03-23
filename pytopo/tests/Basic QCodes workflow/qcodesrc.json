@@ -1,0 +1,5 @@
+{
+    "core" : {
+        "db_location" : "./qcodes_test_data.db"
+    }
+}
