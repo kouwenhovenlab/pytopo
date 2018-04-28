@@ -164,15 +164,13 @@ class DemodRelAcqCtl(DemodAcqCtl):
     
 
 class IQAcqCtl(BaseAcqCtl):
-    
+
     DATADTYPE = np.complex64
-    REFCHAN = 0
-    SIGCHAN = 1
-    
+
     def __init__(self, *arg, **kw):
         super().__init__(*arg, **kw)
         self.demod_frq = None
-        
+    
     def data_shape(self):
         alazar = self._get_alazar()
         self.period = int(alazar.sample_rate() / self.demod_frq + 0.5)
@@ -180,11 +178,25 @@ class IQAcqCtl(BaseAcqCtl):
         self.sinarr = (np.sin(2*np.pi*self.demod_frq*self.tvals).reshape(1,1,-1,1))
         
         return (self.buffers_per_acquisition,
-                self.records_per_buffer)
-    
+                self.records_per_buffer,
+                self.number_of_channels)
+
     def process_buffer(self, buf):
         real_data = np.tensordot(buf, self.cosarr, axes=(-2, -2)).reshape(self.records_per_buffer, 2) / self.RANGE / self.samples_per_record
         imag_data = np.tensordot(buf, self.sinarr, axes=(-2, -2)).reshape(self.records_per_buffer, 2) / self.RANGE / self.samples_per_record
-        data = real_data + 1j * imag_data
+        return real_data + 1j * imag_data
+
+
+class IQRelAcqCtl(IQAcqCtl):
+    
+    REFCHAN = 0
+    SIGCHAN = 1
+    
+    def data_shape(self):
+        ds = list(super().data_shape())
+        return tuple(ds[:-1])
+    
+    def process_buffer(self, buf):
+        data = super().process_buffer(buf)
         phi = np.angle(data[..., self.REFCHAN])
         return data[..., self.SIGCHAN] * np.exp(-1j*phi)
