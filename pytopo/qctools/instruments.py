@@ -27,3 +27,11 @@ def create_inst(cls, name, *arg, **kw):
             return cls(name, *arg, **kw)
 
         return qc.Instrument._all_instruments[name]()
+
+
+def add2station(station, inst, re_add=True):
+    if re_add and inst.name in station.components:
+        del station.components[inst.name]
+    
+    station.add_component(inst)
+    return station
