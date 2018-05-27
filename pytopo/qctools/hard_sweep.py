@@ -144,21 +144,21 @@ class HardSweepDetector(Instrument):
 
     def get_inner_coords(self, params_as_strings=False):
         return list(zip(_param_list(self.inner_params, params_as_strings),
-                        [s.reshape(-1) for s in self.get_inner_grid()]))
+                        [s.reshape(-1).astype(float) for s in self.get_inner_grid()]))
 
     def get_sweep_grid(self):
         return np.meshgrid( *[p() for p in self.sweep_params], indexing='ij')
 
     def get_sweep_coords(self, params_as_strings=False):
         return list(zip(_param_list(self.sweep_params, params_as_strings),
-                    [s.reshape(-1) for s in self.get_sweep_grid()]))
+                    [s.reshape(-1).astype(float) for s in self.get_sweep_grid()]))
 
     def get_sweep_coords_for_ds(self):
         return self.get_sweep_coords(True)
 
     def get_data_params(self, params_as_strings=False):
         return list(zip(_param_list(self.data_params, params_as_strings),
-                    [p().reshape(-1) for p in self.data_params]))
+                    [p().reshape(-1).astype(float) for p in self.data_params]))
 
     def get_data_params_for_ds(self):
         return self.get_data_params(True)
