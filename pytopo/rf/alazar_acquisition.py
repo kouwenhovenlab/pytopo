@@ -13,21 +13,28 @@ class BaseAcqCtl(AcquisitionController):
 
     def __init__(self, name, alazar_name, **kwargs):
         self.acquisitionkwargs = {}
-        self.sample_rate = None
-        self.samples_per_record = None
-        self.records_per_buffer = None
-        self.buffers_per_acquisition = None
         self.number_of_channels = 2
         self.trigger_func = None
-        self.acq_time = None
 
         # make a call to the parent class and by extension, create the parameter
         # structure of this class
         super().__init__(name, alazar_name, **kwargs)
-        # self.add_parameter("acquisition", get_cmd=self.do_acquisition)
+
+        alz = self._get_alazar()
+        self.add_parameter('sample_rate', get_cmd=alz.sample_rate)
+        self.add_parameter('samples_per_record', get_cmd=alz.samples_per_record)
+        self.add_parameter('records_per_buffer', get_cmd=alz.records_per_buffer)
+        self.add_parameter('buffers_per_acquisition', get_cmd=alz.buffers_per_acquisition)
+
+        self.add_parameter('acq_time', get_cmd=None, set_cmd=None, unit='s', initial_value=None)
+        self.add_parameter("acquisition", get_cmd=self.do_acquisition, snapshot_value=False)
+
 
     # Functions that need to be implemented by child classes
     def data_shape(self):
+        raise NotImplementedError
+
+    def data_dims(self):
         raise NotImplementedError
 
     def process_buffer(self, buf):
@@ -43,18 +50,18 @@ class BaseAcqCtl(AcquisitionController):
 
     def pre_start_capture(self):
         alazar = self._get_alazar()
-        self.sample_rate = alazar.sample_rate()
-        self.samples_per_record = alazar.samples_per_record.get()
-        self.records_per_buffer = alazar.records_per_buffer.get()
-        self.buffers_per_acquisition = alazar.buffers_per_acquisition.get()
-        self.tvals = np.arange(self.samples_per_record, dtype=np.float32) / alazar.sample_rate()
+        # self.sample_rate = alazar.sample_rate()
+        # self.samples_per_record = alazar.samples_per_record.get()
+        # self.records_per_buffer = alazar.records_per_buffer.get()
+        # self.buffers_per_acquisition = alazar.buffers_per_acquisition.get()
+        self.tvals = np.arange(self.samples_per_record(), dtype=np.float32) / alazar.sample_rate()
 
-        self.buffer_shape = (self.records_per_buffer,
-                             self.samples_per_record,
+        self.buffer_shape = (self.records_per_buffer(),
+                             self.samples_per_record(),
                              self.number_of_channels)
 
         self.data = np.zeros(self.data_shape(), dtype=self.DATADTYPE)
-        self.handling_times = np.zeros(self.buffers_per_acquisition, dtype=np.float64)
+        self.handling_times = np.zeros(self.buffers_per_acquisition(), dtype=np.float64)
 
     def pre_acquire(self):
         if self.trigger_func:
@@ -90,8 +97,8 @@ class BaseAcqCtl(AcquisitionController):
         :param kwargs:
         :return:
         """
-        if self.acq_time and 'samples_per_record' not in kwargs:
-            kwargs['samples_per_record'] = self.time2samples(self.acq_time)
+        if self.acq_time() and 'samples_per_record' not in kwargs:
+            kwargs['samples_per_record'] = self.time2samples(self.acq_time())
         self.acquisitionkwargs.update(**kwargs)
 
 
@@ -108,10 +115,13 @@ class BaseAcqCtl(AcquisitionController):
 class RawAcqCtl(BaseAcqCtl):
 
     def data_shape(self):
-        return (self.buffers_per_acquisition,
-                self.records_per_buffer,
-                self.samples_per_record,
+        return (self.buffers_per_acquisition(),
+                self.records_per_buffer(),
+                self.samples_per_record(),
                 self.number_of_channels)
+
+    def data_dims(self):
+        return ('buffers', 'records', 'samples', 'channels')
 
     def process_buffer(self, buf):
         return buf / self.RANGE / 2.
@@ -123,20 +133,23 @@ class DemodAcqCtl(BaseAcqCtl):
 
     def __init__(self, *arg, **kw):
         super().__init__(*arg, **kw)
-        self.demod_frq = None
+        self.add_parameter('demod_frq', set_cmd=None, unit='Hz')
 
     def data_shape(self):
         alazar = self._get_alazar()
-        self.period = int(alazar.sample_rate() / self.demod_frq + 0.5)
-        self.demod_samples = self.samples_per_record // self.period
+        self.period = int(alazar.sample_rate() / self.demod_frq() + 0.5)
+        self.demod_samples = self.samples_per_record() // self.period
         self.demod_tvals = self.tvals[::self.period][:self.demod_samples]
-        self.cosarr = (np.cos(2*np.pi*self.demod_frq*self.tvals).reshape(1,1,-1,1))
-        self.sinarr = (np.sin(2*np.pi*self.demod_frq*self.tvals).reshape(1,1,-1,1))
+        self.cosarr = (np.cos(2*np.pi*self.demod_frq()*self.tvals).reshape(1,1,-1,1))
+        self.sinarr = (np.sin(2*np.pi*self.demod_frq()*self.tvals).reshape(1,1,-1,1))
 
-        return (self.buffers_per_acquisition,
-                self.records_per_buffer,
+        return (self.buffers_per_acquisition(),
+                self.records_per_buffer(),
                 self.demod_samples,
                 self.number_of_channels)
+
+    def data_dims(self):
+        return ('buffers', 'records', 'IF_periods', 'channels')
 
     def process_buffer(self, buf):
         real_data = (buf * self.cosarr)[:, :, :self.demod_samples*self.period, :]
@@ -157,6 +170,9 @@ class DemodRelAcqCtl(DemodAcqCtl):
         ds = list(super().data_shape())
         return tuple(ds[:-1])
 
+    def data_dims(self):
+        return ('buffers', 'records', 'IF_periods')
+
     def process_buffer(self, buf):
         data = super().process_buffer(buf)
         phi = np.angle(data[:, :, self.REFCHAN])
@@ -169,21 +185,25 @@ class IQAcqCtl(BaseAcqCtl):
 
     def __init__(self, *arg, **kw):
         super().__init__(*arg, **kw)
-        self.demod_frq = None
+        
+        self.add_parameter('demod_frq', set_cmd=None, unit='Hz')
 
     def data_shape(self):
         alazar = self._get_alazar()
-        self.period = int(alazar.sample_rate() / self.demod_frq + 0.5)
-        self.cosarr = (np.cos(2*np.pi*self.demod_frq*self.tvals).reshape(1,1,-1,1))
-        self.sinarr = (np.sin(2*np.pi*self.demod_frq*self.tvals).reshape(1,1,-1,1))
+        self.period = int(alazar.sample_rate() / self.demod_frq() + 0.5)
+        self.cosarr = (np.cos(2*np.pi*self.demod_frq()*self.tvals).reshape(1,1,-1,1))
+        self.sinarr = (np.sin(2*np.pi*self.demod_frq()*self.tvals).reshape(1,1,-1,1))
 
-        return (self.buffers_per_acquisition,
-                self.records_per_buffer,
+        return (self.buffers_per_acquisition(),
+                self.records_per_buffer(),
                 self.number_of_channels)
 
+    def data_dims(self):
+        return ('buffers', 'records', 'channels')
+
     def process_buffer(self, buf):
-        real_data = np.tensordot(buf, self.cosarr, axes=(-2, -2)).reshape(self.records_per_buffer, 2) / self.RANGE / self.samples_per_record
-        imag_data = np.tensordot(buf, self.sinarr, axes=(-2, -2)).reshape(self.records_per_buffer, 2) / self.RANGE / self.samples_per_record
+        real_data = np.tensordot(buf, self.cosarr, axes=(-2, -2)).reshape(self.records_per_buffer(), 2) / self.RANGE / self.samples_per_record()
+        imag_data = np.tensordot(buf, self.sinarr, axes=(-2, -2)).reshape(self.records_per_buffer(), 2) / self.RANGE / self.samples_per_record()
         return real_data + 1j * imag_data
 
 
@@ -195,6 +215,9 @@ class IQRelAcqCtl(IQAcqCtl):
     def data_shape(self):
         ds = list(super().data_shape())
         return tuple(ds[:-1])
+
+    def data_dims(self):
+        return ('buffers', 'records')
 
     def process_buffer(self, buf):
         data = super().process_buffer(buf)
