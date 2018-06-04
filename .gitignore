@@ -6,3 +6,4 @@ labpythonconfig.py
 *.dat
 *.png
 *.pdf
+pytopo.egg-info
