@@ -10,3 +10,7 @@ rcParams['lines.markersize'] = 4
 rcParams['axes.facecolor'] = 'w'
 rcParams['figure.facecolor'] = 'w'
 rcParams['nbagg.transparent'] = False
+rcParams['figure.subplot.bottom'] = 0.15
+rcParams['figure.subplot.top'] = 0.85
+rcParams['figure.subplot.left'] = 0.15
+rcParams['figure.subplot.right'] = 0.9
