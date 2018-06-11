@@ -185,7 +185,7 @@ class IQAcqCtl(BaseAcqCtl):
 
     def __init__(self, *arg, **kw):
         super().__init__(*arg, **kw)
-        
+
         self.add_parameter('demod_frq', set_cmd=None, unit='Hz')
 
     def data_shape(self):
