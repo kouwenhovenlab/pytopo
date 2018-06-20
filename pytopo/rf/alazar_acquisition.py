@@ -6,31 +6,33 @@ from qcodes.instrument_drivers.AlazarTech.ATS import AcquisitionController
 
 class BaseAcqCtl(AcquisitionController):
 
-    ZERO = np.int16(2048)
-    RANGE = 2047.5
     MINSAMPLES = 384
-    DATADTYPE = np.float32
+    DATADTYPE = np.uint16
 
     def __init__(self, name, alazar_name, **kwargs):
         self.acquisitionkwargs = {}
         self.number_of_channels = 2
         self.trigger_func = None
+        self._average_buffers = False
 
-        # make a call to the parent class and by extension, create the parameter
-        # structure of this class
         super().__init__(name, alazar_name, **kwargs)
 
-        alz = self._get_alazar()
-        self.add_parameter('sample_rate', get_cmd=alz.sample_rate)
-        self.add_parameter('samples_per_record', get_cmd=alz.samples_per_record)
-        self.add_parameter('records_per_buffer', get_cmd=alz.records_per_buffer)
-        self.add_parameter('buffers_per_acquisition', get_cmd=alz.buffers_per_acquisition)
+        if self._alazar is not None:
+            alz = self._get_alazar()
+            self.add_parameter('sample_rate', get_cmd=alz.sample_rate)
+            self.add_parameter('samples_per_record', get_cmd=alz.samples_per_record)
+            self.add_parameter('records_per_buffer', get_cmd=alz.records_per_buffer)
+            self.add_parameter('buffers_per_acquisition', get_cmd=alz.buffers_per_acquisition)
 
-        self.add_parameter('acq_time', get_cmd=None, set_cmd=None, unit='s', initial_value=None)
-        self.add_parameter("acquisition", get_cmd=self.do_acquisition, snapshot_value=False)
+            self.add_parameter('acq_time', get_cmd=None, set_cmd=None, unit='s', initial_value=None)
+            self.add_parameter("acquisition", get_cmd=self.do_acquisition, snapshot_value=False)
+        else:
+            self.add_parameter('sample_rate', set_cmd=None)
+            self.add_parameter('samples_per_record', set_cmd=None)
+            self.add_parameter('records_per_buffer', set_cmd=None)
+            self.add_parameter('buffers_per_acquisition', set_cmd=None)
 
 
-    # Functions that need to be implemented by child classes
     def data_shape(self):
         raise NotImplementedError
 
@@ -50,10 +52,6 @@ class BaseAcqCtl(AcquisitionController):
 
     def pre_start_capture(self):
         alazar = self._get_alazar()
-        # self.sample_rate = alazar.sample_rate()
-        # self.samples_per_record = alazar.samples_per_record.get()
-        # self.records_per_buffer = alazar.records_per_buffer.get()
-        # self.buffers_per_acquisition = alazar.buffers_per_acquisition.get()
         self.tvals = np.arange(self.samples_per_record(), dtype=np.float32) / alazar.sample_rate()
 
         self.buffer_shape = (self.records_per_buffer(),
@@ -75,57 +73,138 @@ class BaseAcqCtl(AcquisitionController):
 
     def handle_buffer(self, data, buffer_number=None):
         t0 = time.perf_counter()
-
-        shaped_data = data.reshape(self.buffer_shape).view(np.uint16)
-        shaped_data >>= 4
-        shaped_data = shaped_data.view(np.int16)
-        shaped_data -= self.ZERO
-
-        data = self.process_buffer(shaped_data)
-
-        if not buffer_number:
-            self.data += data
+        data.shape = self.buffer_shape
+        
+        if not buffer_number or self._average_buffers:
+            self.data += self.process_buffer(data)
             self.handling_times[0] = (time.perf_counter() - t0) * 1e3
         else:
-            self.data[buffer_number] = data
+            self.data[buffer_number] = self.process_buffer(data)
             self.handling_times[buffer_number] = (time.perf_counter() - t0) * 1e3
 
+
     def update_acquisitionkwargs(self, **kwargs):
-        """
-        This method must be used to update the kwargs used for the acquisition
-        with the alazar_driver.acquire
-        :param kwargs:
-        :return:
-        """
         if self.acq_time() and 'samples_per_record' not in kwargs:
             kwargs['samples_per_record'] = self.time2samples(self.acq_time())
         self.acquisitionkwargs.update(**kwargs)
 
 
     def do_acquisition(self):
-        """
-        this method performs an acquisition, which is the get_cmd for the
-        acquisiion parameter of this instrument
-        :return:
-        """
-        value = self._get_alazar().acquire(acquisition_controller=self, **self.acquisitionkwargs)
+        if self._alazar is not None:
+            value = self._get_alazar().acquire(acquisition_controller=self, **self.acquisitionkwargs)
+        else:
+            value = None
         return value
 
 
 class RawAcqCtl(BaseAcqCtl):
 
     def data_shape(self):
-        return (self.buffers_per_acquisition(),
-                self.records_per_buffer(),
-                self.samples_per_record(),
+        shp = (self.buffers_per_acquisition(),
+               self.records_per_buffer(),
+               self.samples_per_record(),
+               self.number_of_channels)
+        
+        if not self._average_buffers:
+            return shp
+        else:
+            return shp[1:]
+
+    def data_dims(self):
+        dims = ('buffers', 'records', 'samples', 'channels')
+        
+        if not self._average_buffers:
+            return dims
+        else:
+            return dims[1:]
+
+    def process_buffer(self, buf):
+        return buf
+    
+    def post_acquire(self):
+        return (np.right_shift(self.data, 4).astype(np.float32) - 2048) / 4096
+
+
+class AvgBufCtl(BaseAcqCtl):
+    
+    DATADTYPE = np.uint32
+    
+    def __init__(self, *arg, **kw):
+        super().__init__(*arg, **kw)        
+        self._average_buffers = True
+    
+    def data_shape(self):
+        shp = (self.records_per_buffer(),
+               self.samples_per_record(),
+               self.number_of_channels)
+        return shp
+
+    def data_dims(self):
+        dims = ('records', 'samples', 'channels')
+        return dims
+
+    def process_buffer(self, buf):
+        return buf
+    
+    def post_acquire(self):
+        return (np.right_shift(self.data, 4).astype(np.float32) / self.buffers_per_acquisition() - 2048) / 4096
+        
+        
+class AvgDemodCtl(AvgBufCtl):
+    
+    def __init__(self, *arg, **kw):
+        super().__init__(*arg, **kw)
+        self.add_parameter('demod_frq', set_cmd=None, unit='Hz')
+        
+    def data_shape(self):
+        self.period = int(self.sample_rate() / self.demod_frq() + 0.5)
+        self.demod_samples = self.samples_per_record() // self.period
+        self.demod_tvals = self.tvals[::self.period][:self.demod_samples]
+        self.cosarr = (np.cos(2*np.pi*self.demod_frq()*self.tvals).reshape(1,-1,1))
+        self.sinarr = (np.sin(2*np.pi*self.demod_frq()*self.tvals).reshape(1,-1,1))
+        
+        return (self.records_per_buffer(),
+                self.demod_samples,
                 self.number_of_channels)
 
     def data_dims(self):
-        return ('buffers', 'records', 'samples', 'channels')
+        return ('records', 'IF_periods', 'channels')
+    
+    def pre_start_capture(self):
+        super().pre_start_capture()
+        self.data = np.zeros((
+            self.records_per_buffer(),
+            self.samples_per_record(),
+            self.number_of_channels,
+        )).astype(self.DATADTYPE)
+    
+    def post_acquire(self):
+        data = super().post_acquire()
+        real = (data * 2 * self.cosarr)[:,:self.demod_samples*self.period,:].reshape(
+            -1, self.demod_samples, self.period, self.number_of_channels).mean(axis=-2)
+        imag = (data * 2 * self.sinarr)[:,:self.demod_samples*self.period,:].reshape(
+            -1, self.demod_samples, self.period, self.number_of_channels).mean(axis=-2)
+        return real + 1j * imag
 
-    def process_buffer(self, buf):
-        return buf / self.RANGE / 2.
+    
+class AvgIQCtl(AvgDemodCtl):
 
+    def data_shape(self):
+        shp = list(super().data_shape())
+
+        return (self.records_per_buffer(),
+                self.number_of_channels)
+
+    def data_dims(self):
+        return ('records', 'channels')
+
+    def post_acquire(self):
+        return super().post_acquire().mean(axis=1)
+
+
+####
+#### OLDER, NOT WELL BENCHMARKED CONTROLLERS
+####
 
 class DemodAcqCtl(BaseAcqCtl):
 
@@ -185,7 +264,7 @@ class IQAcqCtl(BaseAcqCtl):
 
     def __init__(self, *arg, **kw):
         super().__init__(*arg, **kw)
-        
+
         self.add_parameter('demod_frq', set_cmd=None, unit='Hz')
 
     def data_shape(self):
