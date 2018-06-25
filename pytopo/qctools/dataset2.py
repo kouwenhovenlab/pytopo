@@ -12,7 +12,8 @@ from qcodes.dataset.experiment_container import load_experiment_by_name, \
 from qcodes.dataset.sqlite_base import transaction, one
 from qcodes.dataset.data_export import get_data_by_id
 from qcodes.dataset.plotting import plot_by_id
-from qcodes.sweep import SweepMeasurement
+
+from pytopo.sweep import SweepMeasurement
 
 
 def select_experiment(exp_name, sample_name):
