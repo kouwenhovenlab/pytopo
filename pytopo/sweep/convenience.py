@@ -105,7 +105,6 @@ def do_experiment(sweep_object, setup=None, cleanup=None, experiment=None,
 
     if live_plot:
         try:
-            from plottr import plottr
             from plottr.qcodes_dataset import QcodesDatasetSubscriber
             from plottr.tools import start_listener
 
