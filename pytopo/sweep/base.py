@@ -162,7 +162,7 @@ class ParameterSweep(BaseSweepObject):
         self._point_function = point_function
         self._parameter_table = ParamTable([
             ParamSpec(
-                name=parameter.name,
+                name=parameter.full_name,
                 paramtype='numeric',
                 unit=parameter.unit,
                 label=parameter.label
@@ -187,7 +187,7 @@ class ParameterWrapper(BaseSweepObject):
 
         self._parameter_table = ParamTable([
             ParamSpec(
-                name=parameter.name,
+                name=parameter.full_name,
                 paramtype='numeric',
                 unit=parameter.unit,
                 label=parameter.label

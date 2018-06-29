@@ -64,20 +64,19 @@ class _DataExtractor:
 
     def __getitem__(self, layout):
 
-        def is_subset(smaller, larger):
-            return smaller == larger[:len(smaller)]
-
         layout = sorted(layout.split(","))
         all_data = get_data_by_id(self._run_id)
         data_layouts = [sorted([d["name"] for d in ad]) for ad in all_data]
 
-        i = np.array(
-            [is_subset(layout, data_layout) for data_layout in data_layouts]
-        )
+        i = np.array([
+            set(layout).issubset(set(data_layout))
+            for data_layout in data_layouts
+        ])
 
         ind = np.flatnonzero(i)
         if len(ind) == 0:
-            raise ValueError(f"No such layout {layout}")
+            raise ValueError(f"No such layout {layout}. "
+                             f"Available layouts: {data_layouts}")
 
         data = all_data[ind[0]]
         return {d["name"]: d["data"] for d in data}
