@@ -22,7 +22,7 @@ def select_experiment(exp_name, sample_name):
     fail, and another copy of this combination will be created.
     """
     try:
-        exp = load_experiment_by_name(exp_name)
+        exp = load_experiment_by_name(exp_name, sample_name)
     except ValueError:
         exp = new_experiment(exp_name, sample_name)
     return exp
