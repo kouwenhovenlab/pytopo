@@ -112,6 +112,8 @@ class HardSweepDetector(Instrument):
 
         self.set_sweeper(sweeper)
 
+        self.add_parameter('soft_average', set_cmd=None)
+
         self.inner_params = []
         for i, n in enumerate(self.inner_dims):
             self.add_parameter(n, set_cmd=None, unit=self.inner_units[i],
