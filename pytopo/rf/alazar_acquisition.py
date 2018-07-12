@@ -74,7 +74,7 @@ class BaseAcqCtl(AcquisitionController):
     def handle_buffer(self, data, buffer_number=None):
         t0 = time.perf_counter()
         data.shape = self.buffer_shape
-        
+
         if not buffer_number or self._average_buffers:
             self.data += self.process_buffer(data)
             self.handling_times[0] = (time.perf_counter() - t0) * 1e3
@@ -104,7 +104,7 @@ class RawAcqCtl(BaseAcqCtl):
                self.records_per_buffer(),
                self.samples_per_record(),
                self.number_of_channels)
-        
+
         if not self._average_buffers:
             return shp
         else:
@@ -112,7 +112,7 @@ class RawAcqCtl(BaseAcqCtl):
 
     def data_dims(self):
         dims = ('buffers', 'records', 'samples', 'channels')
-        
+
         if not self._average_buffers:
             return dims
         else:
@@ -120,19 +120,20 @@ class RawAcqCtl(BaseAcqCtl):
 
     def process_buffer(self, buf):
         return buf
-    
+
     def post_acquire(self):
-        return (np.right_shift(self.data, 4).astype(np.float32) - 2048) / 4096
+        data = super().post_acquire()
+        return (np.right_shift(data, 4).astype(np.float32) - 2048) / 4096
 
 
 class AvgBufCtl(BaseAcqCtl):
-    
+
     DATADTYPE = np.uint32
-    
+
     def __init__(self, *arg, **kw):
-        super().__init__(*arg, **kw)        
+        super().__init__(*arg, **kw)
         self._average_buffers = True
-    
+
     def data_shape(self):
         shp = (self.records_per_buffer(),
                self.samples_per_record(),
@@ -145,31 +146,32 @@ class AvgBufCtl(BaseAcqCtl):
 
     def process_buffer(self, buf):
         return buf
-    
+
     def post_acquire(self):
-        return (np.right_shift(self.data, 4).astype(np.float32) / self.buffers_per_acquisition() - 2048) / 4096
-        
-        
+        data = super().post_acquire()
+        return (np.right_shift(data, 4).astype(np.float32) / self.buffers_per_acquisition() - 2048) / 4096
+
+
 class AvgDemodCtl(AvgBufCtl):
-    
+
     def __init__(self, *arg, **kw):
         super().__init__(*arg, **kw)
         self.add_parameter('demod_frq', set_cmd=None, unit='Hz')
-        
+
     def data_shape(self):
         self.period = int(self.sample_rate() / self.demod_frq() + 0.5)
         self.demod_samples = self.samples_per_record() // self.period
         self.demod_tvals = self.tvals[::self.period][:self.demod_samples]
         self.cosarr = (np.cos(2*np.pi*self.demod_frq()*self.tvals).reshape(1,-1,1))
         self.sinarr = (np.sin(2*np.pi*self.demod_frq()*self.tvals).reshape(1,-1,1))
-        
+
         return (self.records_per_buffer(),
                 self.demod_samples,
                 self.number_of_channels)
 
     def data_dims(self):
         return ('records', 'IF_periods', 'channels')
-    
+
     def pre_start_capture(self):
         super().pre_start_capture()
         self.data = np.zeros((
@@ -177,7 +179,7 @@ class AvgDemodCtl(AvgBufCtl):
             self.samples_per_record(),
             self.number_of_channels,
         )).astype(self.DATADTYPE)
-    
+
     def post_acquire(self):
         data = super().post_acquire()
         real = (data * 2 * self.cosarr)[:,:self.demod_samples*self.period,:].reshape(
@@ -186,7 +188,7 @@ class AvgDemodCtl(AvgBufCtl):
             -1, self.demod_samples, self.period, self.number_of_channels).mean(axis=-2)
         return real + 1j * imag
 
-    
+
 class AvgIQCtl(AvgDemodCtl):
 
     def data_shape(self):
