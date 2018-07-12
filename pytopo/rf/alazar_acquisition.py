@@ -15,6 +15,7 @@ class BaseAcqCtl(AcquisitionController):
         self._average_buffers = False
         self._nbits = 12
         self._model = 'ATS9360'
+        self._buffer_order = 'brsc'
 
         super().__init__(name, alazar_name, **kwargs)
 
@@ -31,6 +32,8 @@ class BaseAcqCtl(AcquisitionController):
             _idn = alz.IDN()
             self._nbits = _idn['bits_per_sample']
             self._model = _idn['model']
+            if self._model == 'ATS9870':
+                self._buffer_order = 'bcrs'
 
         else:
             self.add_parameter('sample_rate', set_cmd=None)
@@ -67,9 +70,16 @@ class BaseAcqCtl(AcquisitionController):
         alazar = self._get_alazar()
         self.tvals = np.arange(self.samples_per_record(), dtype=np.float32) / alazar.sample_rate()
 
-        self.buffer_shape = (self.records_per_buffer(),
-                             self.samples_per_record(),
-                             self.number_of_channels)
+        if self._buffer_order == 'brsc':
+            self.buffer_shape = (self.records_per_buffer(),
+                                 self.samples_per_record(),
+                                 self.number_of_channels)
+        elif self._buffer_order == 'bcrs':
+            self.buffer_shape = (self.number_of_channels,
+                                 self.records_per_buffer(),
+                                 self.samples_per_record(),)
+        else:
+            raise ValueError('Unknown buffer order {}'.format(self._buffer_order))
 
         self.data = np.zeros(self.data_shape(), dtype=self._datadtype)
         self.handling_times = np.zeros(self.buffers_per_acquisition(), dtype=np.float64)
@@ -87,6 +97,8 @@ class BaseAcqCtl(AcquisitionController):
     def handle_buffer(self, data, buffer_number=None):
         t0 = time.perf_counter()
         data.shape = self.buffer_shape
+        if self._buffer_order == 'bcrs':
+            data = data.transpose((1,2,0))
 
         if not buffer_number or self._average_buffers:
             self.data += self.process_buffer(data)
