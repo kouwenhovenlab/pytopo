@@ -7,13 +7,14 @@ from qcodes.instrument_drivers.AlazarTech.ATS import AcquisitionController
 class BaseAcqCtl(AcquisitionController):
 
     MINSAMPLES = 384
-    DATADTYPE = np.uint16
 
     def __init__(self, name, alazar_name, **kwargs):
         self.acquisitionkwargs = {}
         self.number_of_channels = 2
         self.trigger_func = None
         self._average_buffers = False
+        self._nbits = 12
+        self._model = 'ATS9360'
 
         super().__init__(name, alazar_name, **kwargs)
 
@@ -26,11 +27,23 @@ class BaseAcqCtl(AcquisitionController):
 
             self.add_parameter('acq_time', get_cmd=None, set_cmd=None, unit='s', initial_value=None)
             self.add_parameter("acquisition", get_cmd=self.do_acquisition, snapshot_value=False)
+
+            _idn = alz.IDN()
+            self._nbits = _idn['bits_per_sample']
+            self._model = _idn['model']
+    
         else:
             self.add_parameter('sample_rate', set_cmd=None)
             self.add_parameter('samples_per_record', set_cmd=None)
             self.add_parameter('records_per_buffer', set_cmd=None)
             self.add_parameter('buffers_per_acquisition', set_cmd=None)
+
+        if self._nbits == 8:
+            self._datadtype = np.uint8
+        elif self._nbits == 12:
+            self._datadtype = np.uint16
+        else:
+            raise ValueError('Unsupported number of bits per samples:', self._nbits)
 
 
     def data_shape(self):
@@ -58,7 +71,7 @@ class BaseAcqCtl(AcquisitionController):
                              self.samples_per_record(),
                              self.number_of_channels)
 
-        self.data = np.zeros(self.data_shape(), dtype=self.DATADTYPE)
+        self.data = np.zeros(self.data_shape(), dtype=self._datadtype)
         self.handling_times = np.zeros(self.buffers_per_acquisition(), dtype=np.float64)
 
     def pre_acquire(self):
@@ -122,16 +135,23 @@ class RawAcqCtl(BaseAcqCtl):
         return buf
     
     def post_acquire(self):
-        return (np.right_shift(self.data, 4).astype(np.float32) - 2048) / 4096
+        data = self.data
+        if self._nbits == 12:
+            data = np.right_shift(self.data, 4)
+        return (self.data.astype(np.float32) - (2**(self._nbits-1))) / (2**self._nbits)
 
 
 class AvgBufCtl(BaseAcqCtl):
     
-    DATADTYPE = np.uint32
-    
     def __init__(self, *arg, **kw):
         super().__init__(*arg, **kw)        
         self._average_buffers = True
+
+        if self._nbits == 8:
+            self._datadtype = np.uint16
+        elif self._nbits == 12:
+            self._datadtype = np.uint32
+
     
     def data_shape(self):
         shp = (self.records_per_buffer(),
@@ -147,7 +167,11 @@ class AvgBufCtl(BaseAcqCtl):
         return buf
     
     def post_acquire(self):
-        return (np.right_shift(self.data, 4).astype(np.float32) / self.buffers_per_acquisition() - 2048) / 4096
+        data = self.data
+        if self._nbits == 12:
+            data = np.right_shift(self.data, 4)
+
+        return (self.data.astype(np.float32) - (2**(self._nbits-1))) / (2**self._nbits)
         
         
 class AvgDemodCtl(AvgBufCtl):
@@ -176,7 +200,7 @@ class AvgDemodCtl(AvgBufCtl):
             self.records_per_buffer(),
             self.samples_per_record(),
             self.number_of_channels,
-        )).astype(self.DATADTYPE)
+        )).astype(self._datadtype)
     
     def post_acquire(self):
         data = super().post_acquire()
@@ -202,8 +226,9 @@ class AvgIQCtl(AvgDemodCtl):
         return super().post_acquire().mean(axis=1)
 
 
+"""
 ####
-#### OLDER, NOT WELL BENCHMARKED CONTROLLERS
+#### OLDER, CURRENTLY NOT WORKING CONTROLLERS. NEEDS TO BE FIXED.
 ####
 
 class DemodAcqCtl(BaseAcqCtl):
@@ -302,3 +327,4 @@ class IQRelAcqCtl(IQAcqCtl):
         data = super().process_buffer(buf)
         phi = np.angle(data[..., self.REFCHAN])
         return data[..., self.SIGCHAN] * np.exp(-1j*phi)
+"""
