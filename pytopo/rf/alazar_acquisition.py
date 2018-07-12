@@ -135,7 +135,7 @@ class RawAcqCtl(BaseAcqCtl):
         return buf
 
     def post_acquire(self):
-        data = self.data
+        data = super().post_acquire()
         if self._nbits == 12:
             data = np.right_shift(self.data, 4)
         return (self.data.astype(np.float32) - (2**(self._nbits-1))) / (2**self._nbits)
@@ -167,7 +167,7 @@ class AvgBufCtl(BaseAcqCtl):
         return buf
 
     def post_acquire(self):
-        data = self.data
+        data = super().post_acquire()
         if self._nbits == 12:
             data = np.right_shift(self.data, 4)
 
