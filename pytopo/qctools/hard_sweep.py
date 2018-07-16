@@ -15,53 +15,53 @@ def _param_list(params, convert_to_string=True):
         return params
 
 
-def make_paramspec(param, paramtype='numeric', depends_on=[]):
-    return ParamSpec(name=str(param), paramtype=paramtype,
-                     label=param.label, unit=param.unit,
-                     depends_on=[str(p) for p in depends_on])
+# def make_paramspec(param, paramtype='numeric', depends_on=[]):
+#     return ParamSpec(name=str(param), paramtype=paramtype,
+#                      label=param.label, unit=param.unit,
+#                      depends_on=[str(p) for p in depends_on])
 
 
-def configure_dataset(ds, hard_sweep_detector=None, soft_sweep_params=[], soft_data_params=[]):
-    for p in soft_sweep_params:
-        ds.add_parameter(make_paramspec(p))
-    for p in soft_data_params:
-        ds.add_parameter(make_paramspec(p, depends_on=soft_sweep_params))
-    if hard_sweep_detector is not None:
-        for p in hard_sweep_detector.sweep_params:
-            ds.add_parameter(make_paramspec(p, paramtype='array'))
-        for p in hard_sweep_detector.data_params:
-            ds.add_parameter(make_paramspec(p, paramtype='array',
-                                            depends_on=hard_sweep_detector.sweep_params + soft_sweep_params))
-    return ds
+# def configure_dataset(ds, hard_sweep_detector=None, soft_sweep_params=[], soft_data_params=[]):
+#     for p in soft_sweep_params:
+#         ds.add_parameter(make_paramspec(p))
+#     for p in soft_data_params:
+#         ds.add_parameter(make_paramspec(p, depends_on=soft_sweep_params))
+#     if hard_sweep_detector is not None:
+#         for p in hard_sweep_detector.sweep_params:
+#             ds.add_parameter(make_paramspec(p, paramtype='array'))
+#         for p in hard_sweep_detector.data_params:
+#             ds.add_parameter(make_paramspec(p, paramtype='array',
+#                                             depends_on=hard_sweep_detector.sweep_params + soft_sweep_params))
+#     return ds
 
 
-def make_dataset(name='', exp_id=None, **kw):
-    ds = new_data_set(name)
-    return configure_dataset(ds, **kw)
+# def make_dataset(name='', exp_id=None, **kw):
+#     ds = new_data_set(name)
+#     return configure_dataset(ds, **kw)
 
 
-def configure_measurement(m, hard_sweep_detector=None, soft_sweep_params=[], soft_data_params=[]):
-    for p in soft_sweep_params:
-        m.register_parameter(p)
-    for p in soft_data_params:
-        m.register_parameter(p, setpoints=soft_sweep_params)
-    if hard_sweep_detector is not None:
-        for p in hard_sweep_detector.sweep_params:
-            m.register_parameter(p)
-        for p in hard_sweep_detector.data_params:
-            m.register_parameter(p, setpoints=soft_sweep_params + hard_sweep_detector.sweep_params)
-    return m
+# def configure_measurement(m, hard_sweep_detector=None, soft_sweep_params=[], soft_data_params=[]):
+#     for p in soft_sweep_params:
+#         m.register_parameter(p)
+#     for p in soft_data_params:
+#         m.register_parameter(p, setpoints=soft_sweep_params)
+#     if hard_sweep_detector is not None:
+#         for p in hard_sweep_detector.sweep_params:
+#             m.register_parameter(p)
+#         for p in hard_sweep_detector.data_params:
+#             m.register_parameter(p, setpoints=soft_sweep_params + hard_sweep_detector.sweep_params)
+#     return m
 
 
-def make_measurement(name='', exp=None, **kw):
-    write_period = kw.pop('write_period', 5)
+# def make_measurement(name='', exp=None, **kw):
+#     write_period = kw.pop('write_period', 5)
 
-    m = Measurement(exp=exp)
-    m.write_period = write_period
-    m.name = name
+#     m = Measurement(exp=exp)
+#     m.write_period = write_period
+#     m.name = name
 
-    m = configure_measurement(m, **kw)
-    return m
+#     m = configure_measurement(m, **kw)
+#     return m
 
 
 class HardSweep(Instrument):

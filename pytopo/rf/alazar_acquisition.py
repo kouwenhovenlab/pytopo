@@ -16,6 +16,10 @@ class BaseAcqCtl(AcquisitionController):
         self._nbits = 12
         self._model = 'ATS9360'
         self._buffer_order = 'brsc'
+        
+        self.do_allocate_data = True
+        self.data = None
+        self.tvals = None
 
         super().__init__(name, alazar_name, **kwargs)
 
@@ -66,10 +70,12 @@ class BaseAcqCtl(AcquisitionController):
             nsamples += 128
         return max(self.MINSAMPLES, nsamples)
 
-    def pre_start_capture(self):
+    def allocate_data(self):
         alazar = self._get_alazar()
         self.tvals = np.arange(self.samples_per_record(), dtype=np.float32) / alazar.sample_rate()
+        self.data = np.zeros(self.data_shape(), dtype=self._datadtype)
 
+    def pre_start_capture(self):
         if self._buffer_order == 'brsc':
             self.buffer_shape = (self.records_per_buffer(),
                                  self.samples_per_record(),
@@ -81,7 +87,9 @@ class BaseAcqCtl(AcquisitionController):
         else:
             raise ValueError('Unknown buffer order {}'.format(self._buffer_order))
 
-        self.data = np.zeros(self.data_shape(), dtype=self._datadtype)
+        if self.do_allocate_data:
+            self.allocate_data()
+
         self.handling_times = np.zeros(self.buffers_per_acquisition(), dtype=np.float64)
 
     def pre_acquire(self):
@@ -237,6 +245,7 @@ class AvgIQCtl(AvgDemodCtl):
 
     def post_acquire(self):
         return super().post_acquire().mean(axis=1)
+
 
 
 """
