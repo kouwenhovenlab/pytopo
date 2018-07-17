@@ -9,6 +9,7 @@ class AlazarBaseDetector(HardSweepDetector):
         self._signal_real = None
         self._signal_imag = None
         self._signal_abs = None
+        self._signal_phase = None
 
         inner_dims = []
         for d in self.acqctl.data_dims():
@@ -21,7 +22,8 @@ class AlazarBaseDetector(HardSweepDetector):
         self.add_parameter('signal_real', get_cmd=lambda: self._signal_real, unit='V', snapshot_value=False)
         self.add_parameter('signal_imag', get_cmd=lambda: self._signal_imag, unit='V', snapshot_value=False)
         self.add_parameter('signal_abs', get_cmd=lambda: self._signal_abs, unit='V', snapshot_value=False)
-        self.data_params = [self.signal_real, self.signal_imag, self.signal_abs]
+        self.add_parameter('signal_phase', get_cmd=lambda: self._signal_phase, unit='deg', snapshot_value=False)
+        self.data_params = [self.signal_real, self.signal_imag, self.signal_abs, self.signal_phase]
         
         if 'samples' in self.inner_dims or 'IF_periods' in self.inner_dims:
             self.add_parameter('time', unit='s', snapshot_value=False, 
@@ -56,6 +58,7 @@ class AlazarBaseDetector(HardSweepDetector):
         self._signal_real = np.real(data)
         self._signal_imag = np.imag(data)
         self._signal_abs = np.abs(data)
+        self._signal_phase = np.angle(data, deg=True)
         
         return data
 
@@ -95,5 +98,6 @@ class AlazarDetector(AlazarBaseDetector):
             self._signal_real = np.real(data)
             self._signal_imag = np.imag(data)
             self._signal_abs = np.abs(data)
+            self._signal_phase = np.angle(data, deg=True)
             
         return data
