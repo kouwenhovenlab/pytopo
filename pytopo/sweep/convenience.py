@@ -1,6 +1,8 @@
 import numpy as np
+import time
 from warnings import warn
 
+from qcodes import Parameter
 from qcodes.dataset.data_export import get_data_by_id
 from qcodes.dataset.plotting import plot_by_id
 
@@ -36,7 +38,23 @@ class CallSweepObject(BaseSweepObject):
         yield
 
 
+def _wrap_parameter(parameter):
+    if not isinstance(parameter, Parameter):
+        if not callable(parameter):
+            raise ValueError("Parameter should either be a callable or a "
+                             "QCoDeS parameter")
+
+        parameter = parameter()
+
+        if not isinstance(parameter, Parameter):
+            raise ValueError("If parameter is a callable, it should return a"
+                             "QCoDeS parameter")
+
+    return parameter
+
+
 def sweep(parameter, set_points):
+    parameter = _wrap_parameter(parameter)
 
     if not callable(set_points):
         sweep_object = ParameterSweep(parameter, lambda: set_points)
@@ -47,11 +65,36 @@ def sweep(parameter, set_points):
 
 
 def measure(parameter):
+    parameter = _wrap_parameter(parameter)
     return ParameterWrapper(parameter)
 
 
 def call(call_function, *args, **kwargs):
     return CallSweepObject(call_function, *args, **kwargs)
+
+
+def time_trace(interval_time, total_time=None, stop_condition=None):
+
+    start_time = None   # Set when we call "generator_function"
+
+    if total_time is None:
+        if stop_condition is None:
+            raise ValueError("Either specify the total time or the stop "
+                             "condition")
+
+    else:
+        def stop_condition():
+            return time.time() - start_time > total_time
+
+    def generator_function():
+        global start_time
+        start_time = time.time()
+        while not stop_condition():
+            yield time.time()
+            time.sleep(interval_time)
+
+    time_parameter = Parameter(name="time", unit="s")
+    return sweep(time_parameter, generator_function)
 
 
 class _DataExtractor:

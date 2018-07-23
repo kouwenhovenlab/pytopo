@@ -149,6 +149,7 @@ class ParameterSweep(BaseSweepObject):
     """
     Sweep independent parameters by looping over set point values and setting
     a QCoDeS parameter to this value at each iteration
+
     Parameters
     ----------
     parameter: qcodes.StandardParameter
@@ -162,10 +163,10 @@ class ParameterSweep(BaseSweepObject):
         self._point_function = point_function
         self._parameter_table = ParamTable([
             ParamSpec(
-                name=parameter.full_name,
+                name=self._parameter.full_name,
                 paramtype='numeric',
-                unit=parameter.unit,
-                label=parameter.label
+                unit=self._parameter.unit,
+                label=self._parameter.label
             )
         ])
 
