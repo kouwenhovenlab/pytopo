@@ -7,10 +7,11 @@ from qcodes.dataset.data_export import get_data_by_id
 from qcodes.dataset.plotting import plot_by_id
 
 from pytopo.sweep.base import (
-    ParameterSweep, ParameterWrapper, Nest, Chain,
+    ParameterSweep, ParameterWrapper, Nest, Chain, Zip,
     BaseSweepObject
 )
 
+from pytopo.qctools.group_setter import GroupSetter
 from pytopo.sweep.param_table import ParamTable
 from pytopo.sweep.measurement import SweepMeasurement
 
@@ -19,6 +20,7 @@ class _ConvenienceWrapper(BaseSweepObject):
     def __init__(self, sweep_object):
         super().__init__()
         self._sweep_object = sweep_object
+        self._parameter_table = sweep_object.parameter_table
 
     def _generator_factory(self):
         return self._sweep_object._generator_factory()
@@ -38,23 +40,10 @@ class CallSweepObject(BaseSweepObject):
         yield
 
 
-def _wrap_parameter(parameter):
-    if not isinstance(parameter, Parameter):
-        if not callable(parameter):
-            raise ValueError("Parameter should either be a callable or a "
-                             "QCoDeS parameter")
-
-        parameter = parameter()
-
-        if not isinstance(parameter, Parameter):
-            raise ValueError("If parameter is a callable, it should return a"
-                             "QCoDeS parameter")
-
-    return parameter
-
-
 def sweep(parameter, set_points):
-    parameter = _wrap_parameter(parameter)
+    if hasattr(parameter, "is_getter_setter"):
+        parameter = parameter()
+        parameter = GroupSetter(*parameter)
 
     if not callable(set_points):
         sweep_object = ParameterSweep(parameter, lambda: set_points)
@@ -65,8 +54,15 @@ def sweep(parameter, set_points):
 
 
 def measure(parameter):
-    parameter = _wrap_parameter(parameter)
-    return ParameterWrapper(parameter)
+    if hasattr(parameter, "is_getter_setter"):
+        parameter = parameter()
+
+    if len(parameter) > 1:
+        result = Chain(*[ParameterWrapper(p) for p in parameter])
+    else:
+        result = ParameterWrapper(parameter)
+
+    return result
 
 
 def call(call_function, *args, **kwargs):
@@ -84,17 +80,24 @@ def time_trace(interval_time, total_time=None, stop_condition=None):
 
     else:
         def stop_condition():
+            global start_time
             return time.time() - start_time > total_time
 
     def generator_function():
         global start_time
         start_time = time.time()
         while not stop_condition():
-            yield time.time()
+            yield time.time() - start_time
             time.sleep(interval_time)
 
-    time_parameter = Parameter(name="time", unit="s")
+    time_parameter = Parameter(name="time", unit="s", set_cmd=None,
+                               get_cmd=None)
+
     return sweep(time_parameter, generator_function)
+
+
+def szip(*sweep_objects):
+    return _ConvenienceWrapper(Zip(*sweep_objects))
 
 
 class _DataExtractor:

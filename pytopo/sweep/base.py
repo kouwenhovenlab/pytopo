@@ -145,6 +145,19 @@ class Chain(BaseSweepObject):
                 yield result
 
 
+class Zip(BaseSweepObject):
+    def __init__(self, *sweep_objects: BaseSweepObject) ->None:
+        super().__init__()
+        self._sweep_objects = sweep_objects
+        self._parameter_table = param_table.prod(
+            [so.parameter_table for so in sweep_objects]
+        )
+
+    def _generator_factory(self) ->Iterator:
+        for sos in zip(*self._sweep_objects):
+            yield {k: v for d in sos for k, v in d.items()}
+
+
 class ParameterSweep(BaseSweepObject):
     """
     Sweep independent parameters by looping over set point values and setting
