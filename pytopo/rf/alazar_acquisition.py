@@ -7,13 +7,19 @@ from qcodes.instrument_drivers.AlazarTech.ATS import AcquisitionController
 class BaseAcqCtl(AcquisitionController):
 
     MINSAMPLES = 384
-    DATADTYPE = np.uint16
 
     def __init__(self, name, alazar_name, **kwargs):
         self.acquisitionkwargs = {}
         self.number_of_channels = 2
         self.trigger_func = None
         self._average_buffers = False
+        self._nbits = 12
+        self._model = 'ATS9360'
+        self._buffer_order = 'brsc'
+        
+        self.do_allocate_data = True
+        self.data = None
+        self.tvals = None
 
         super().__init__(name, alazar_name, **kwargs)
 
@@ -26,11 +32,25 @@ class BaseAcqCtl(AcquisitionController):
 
             self.add_parameter('acq_time', get_cmd=None, set_cmd=None, unit='s', initial_value=None)
             self.add_parameter("acquisition", get_cmd=self.do_acquisition, snapshot_value=False)
+
+            _idn = alz.IDN()
+            self._nbits = _idn['bits_per_sample']
+            self._model = _idn['model']
+            if self._model == 'ATS9870':
+                self._buffer_order = 'bcrs'
+
         else:
             self.add_parameter('sample_rate', set_cmd=None)
             self.add_parameter('samples_per_record', set_cmd=None)
             self.add_parameter('records_per_buffer', set_cmd=None)
             self.add_parameter('buffers_per_acquisition', set_cmd=None)
+
+        if self._nbits == 8:
+            self._datadtype = np.uint8
+        elif self._nbits == 12:
+            self._datadtype = np.uint16
+        else:
+            raise ValueError('Unsupported number of bits per samples:', self._nbits)
 
 
     def data_shape(self):
@@ -50,15 +70,26 @@ class BaseAcqCtl(AcquisitionController):
             nsamples += 128
         return max(self.MINSAMPLES, nsamples)
 
-    def pre_start_capture(self):
+    def allocate_data(self):
         alazar = self._get_alazar()
         self.tvals = np.arange(self.samples_per_record(), dtype=np.float32) / alazar.sample_rate()
+        self.data = np.zeros(self.data_shape(), dtype=self._datadtype)
 
-        self.buffer_shape = (self.records_per_buffer(),
-                             self.samples_per_record(),
-                             self.number_of_channels)
+    def pre_start_capture(self):
+        if self._buffer_order == 'brsc':
+            self.buffer_shape = (self.records_per_buffer(),
+                                 self.samples_per_record(),
+                                 self.number_of_channels)
+        elif self._buffer_order == 'bcrs':
+            self.buffer_shape = (self.number_of_channels,
+                                 self.records_per_buffer(),
+                                 self.samples_per_record(),)
+        else:
+            raise ValueError('Unknown buffer order {}'.format(self._buffer_order))
 
-        self.data = np.zeros(self.data_shape(), dtype=self.DATADTYPE)
+        if self.do_allocate_data:
+            self.allocate_data()
+
         self.handling_times = np.zeros(self.buffers_per_acquisition(), dtype=np.float64)
 
     def pre_acquire(self):
@@ -74,7 +105,9 @@ class BaseAcqCtl(AcquisitionController):
     def handle_buffer(self, data, buffer_number=None):
         t0 = time.perf_counter()
         data.shape = self.buffer_shape
-        
+        if self._buffer_order == 'bcrs':
+            data = data.transpose((1,2,0))
+
         if not buffer_number or self._average_buffers:
             self.data += self.process_buffer(data)
             self.handling_times[0] = (time.perf_counter() - t0) * 1e3
@@ -104,7 +137,7 @@ class RawAcqCtl(BaseAcqCtl):
                self.records_per_buffer(),
                self.samples_per_record(),
                self.number_of_channels)
-        
+
         if not self._average_buffers:
             return shp
         else:
@@ -112,7 +145,7 @@ class RawAcqCtl(BaseAcqCtl):
 
     def data_dims(self):
         dims = ('buffers', 'records', 'samples', 'channels')
-        
+
         if not self._average_buffers:
             return dims
         else:
@@ -120,19 +153,27 @@ class RawAcqCtl(BaseAcqCtl):
 
     def process_buffer(self, buf):
         return buf
-    
+
     def post_acquire(self):
-        return (np.right_shift(self.data, 4).astype(np.float32) - 2048) / 4096
+        data = super().post_acquire()
+        if self._nbits == 12:
+            data = np.right_shift(self.data, 4)
+
+        return (data.astype(np.float32) / (2**self._nbits)) - 0.5
 
 
 class AvgBufCtl(BaseAcqCtl):
-    
-    DATADTYPE = np.uint32
-    
+
     def __init__(self, *arg, **kw):
-        super().__init__(*arg, **kw)        
+        super().__init__(*arg, **kw)
         self._average_buffers = True
-    
+
+        if self._nbits == 8:
+            self._datadtype = np.uint16
+        elif self._nbits == 12:
+            self._datadtype = np.uint32
+
+
     def data_shape(self):
         shp = (self.records_per_buffer(),
                self.samples_per_record(),
@@ -145,39 +186,43 @@ class AvgBufCtl(BaseAcqCtl):
 
     def process_buffer(self, buf):
         return buf
-    
+
     def post_acquire(self):
-        return (np.right_shift(self.data, 4).astype(np.float32) / self.buffers_per_acquisition() - 2048) / 4096
-        
-        
+        data = super().post_acquire()
+        if self._nbits == 12:
+            data = np.right_shift(self.data, 4)
+
+        return (data.astype(np.float32) / (2**self._nbits)) - 0.5
+
+
 class AvgDemodCtl(AvgBufCtl):
-    
+
     def __init__(self, *arg, **kw):
         super().__init__(*arg, **kw)
         self.add_parameter('demod_frq', set_cmd=None, unit='Hz')
-        
+
     def data_shape(self):
         self.period = int(self.sample_rate() / self.demod_frq() + 0.5)
         self.demod_samples = self.samples_per_record() // self.period
         self.demod_tvals = self.tvals[::self.period][:self.demod_samples]
         self.cosarr = (np.cos(2*np.pi*self.demod_frq()*self.tvals).reshape(1,-1,1))
         self.sinarr = (np.sin(2*np.pi*self.demod_frq()*self.tvals).reshape(1,-1,1))
-        
+
         return (self.records_per_buffer(),
                 self.demod_samples,
                 self.number_of_channels)
 
     def data_dims(self):
         return ('records', 'IF_periods', 'channels')
-    
+
     def pre_start_capture(self):
         super().pre_start_capture()
         self.data = np.zeros((
             self.records_per_buffer(),
             self.samples_per_record(),
             self.number_of_channels,
-        )).astype(self.DATADTYPE)
-    
+        )).astype(self._datadtype)
+
     def post_acquire(self):
         data = super().post_acquire()
         real = (data * 2 * self.cosarr)[:,:self.demod_samples*self.period,:].reshape(
@@ -186,7 +231,7 @@ class AvgDemodCtl(AvgBufCtl):
             -1, self.demod_samples, self.period, self.number_of_channels).mean(axis=-2)
         return real + 1j * imag
 
-    
+
 class AvgIQCtl(AvgDemodCtl):
 
     def data_shape(self):
@@ -202,8 +247,10 @@ class AvgIQCtl(AvgDemodCtl):
         return super().post_acquire().mean(axis=1)
 
 
+
+"""
 ####
-#### OLDER, NOT WELL BENCHMARKED CONTROLLERS
+#### OLDER, CURRENTLY NOT WORKING CONTROLLERS. NEEDS TO BE FIXED.
 ####
 
 class DemodAcqCtl(BaseAcqCtl):
@@ -302,3 +349,4 @@ class IQRelAcqCtl(IQAcqCtl):
         data = super().process_buffer(buf)
         phi = np.angle(data[..., self.REFCHAN])
         return data[..., self.SIGCHAN] * np.exp(-1j*phi)
+"""
