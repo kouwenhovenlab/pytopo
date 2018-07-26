@@ -1,6 +1,7 @@
+import numpy as np
+
 from typing import Iterator, Callable, List
 
-from qcodes import Parameter, ParamSpec
 from pytopo.sweep import param_table
 from pytopo.sweep.param_table import ParamTable
 
@@ -35,6 +36,9 @@ class BaseSweepObject:
             self._start_iter()
 
         return next(self._generator)
+
+    def __call__(self, *sweep_objects):
+        return Nest(self, Chain(*sweep_objects))
 
     @property
     def parameter_table(self) ->ParamTable:
@@ -158,58 +162,63 @@ class Zip(BaseSweepObject):
             yield {k: v for d in sos for k, v in d.items()}
 
 
-class ParameterSweep(BaseSweepObject):
+class Sweep(BaseSweepObject):
     """
     Sweep independent parameters by looping over set point values and setting
     a QCoDeS parameter to this value at each iteration
 
     Parameters
     ----------
-    parameter: qcodes.StandardParameter
-    point_function: callable
+    set_function (callable):
+        A function of one argument which sets the independent parameter
+    point_function (callable)
         Unrolling this iterator returns to us set values of the parameter
     """
 
-    def __init__(self, parameter: Parameter, point_function: Callable) ->None:
+    def __init__(
+            self, set_function: Callable, point_function: Callable) ->None:
+
+        if not hasattr(set_function, "getter_setter_decorated"):
+            raise ValueError("Set function should be decorated with "
+                             "pytopo.sweep.setter")
+
         super().__init__()
-        self._parameter = parameter
         self._point_function = point_function
-        self._parameter_table = ParamTable([
-            ParamSpec(
-                name=self._parameter.full_name,
-                paramtype='numeric',
-                unit=self._parameter.unit,
-                label=self._parameter.label
-            )
-        ])
+        self._set_function, self._parameter_table = set_function()
 
     def _generator_factory(self)->Iterator:
         for set_value in self._point_function():
-            self._parameter.set(set_value)
-            yield {self._parameter.full_name: set_value}
+            yield self._set_function(*np.atleast_1d(set_value))
 
 
-class ParameterWrapper(BaseSweepObject):
+class Measure(BaseSweepObject):
     """
     A wrapper class which iterates once and returns the get value of a QCoDeS
     parameter. Since we are getting a parameter value, instances of
     ParameterWrapper are measurable
     """
 
-    def __init__(self, parameter: Parameter)->None:
+    def __init__(self, get_function: Callable)->None:
+
+        if not hasattr(get_function, "getter_setter_decorated"):
+            raise ValueError("get function should be decorated with "
+                             "pytopo.sweep.getter")
+
         super().__init__()
 
-        self._parameter_table = ParamTable([
-            ParamSpec(
-                name=parameter.full_name,
-                paramtype='numeric',
-                unit=parameter.unit,
-                label=parameter.label
-            )
-        ])
-
-        self._parameter = parameter
+        self._get_function, self._parameter_table = get_function()
         self._measurable = True
 
     def _generator_factory(self)->Iterator:
-        yield {self._parameter.full_name: self._parameter.get()}
+        yield self._get_function()
+
+
+class CallSweepObject(BaseSweepObject):
+    def __init__(self, call_function, *args, **kwargs):
+        super().__init__()
+        self._caller = lambda: call_function(*args, **kwargs)
+        self._parameter_table = ParamTable([])
+
+    def _generator_factory(self):
+        self._caller()
+        yield

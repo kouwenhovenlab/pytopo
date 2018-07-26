@@ -2,14 +2,14 @@ import itertools
 import pytest
 
 from qcodes import Parameter
-from pytopo.sweep.base import ParameterSweep, ParameterWrapper, Nest, Chain
+from pytopo.sweep.base import Sweep, Measure, Nest, Chain
 
 
 def test_sweep_parameter():
 
     x = Parameter("x", set_cmd=None, get_cmd=None)
     sweep_values = [0, 1, 2]
-    parameter_sweep = ParameterSweep(x, lambda: sweep_values)
+    parameter_sweep = Sweep(x, lambda: sweep_values)
 
     assert list(parameter_sweep) == [{x.name: value} for value in sweep_values]
 
@@ -17,7 +17,7 @@ def test_sweep_parameter():
 def test_parameter_wrapper():
     m = Parameter("m", set_cmd=None, get_cmd=None)
     m.set(3)
-    param_wrapper = ParameterWrapper(m)
+    param_wrapper = Measure(m)
 
     assert list(param_wrapper) == [{m.name: m.get()}]
 
@@ -33,8 +33,8 @@ def test_nest():
     sweep_values = [0, 1, 2]
 
     nest = Nest(
-        ParameterSweep(x, lambda: sweep_values),
-        ParameterWrapper(m)
+        Sweep(x, lambda: sweep_values),
+        Measure(m)
     )
 
     assert list(nest) == [{x.name: xval, m.name: f(xval)}
@@ -54,9 +54,9 @@ def test_nest_2d():
     sweep_values_y = [5, 6, 7]
 
     nest = Nest(
-        ParameterSweep(x, lambda: sweep_values_x),
-        ParameterSweep(y, lambda: sweep_values_y),
-        ParameterWrapper(m)
+        Sweep(x, lambda: sweep_values_x),
+        Sweep(y, lambda: sweep_values_y),
+        Measure(m)
     )
 
     assert list(nest) == [
@@ -80,10 +80,10 @@ def test_nest_3d():
     sweep_values_z = [3, 6, 9]
 
     nest = Nest(
-        ParameterSweep(x, lambda: sweep_values_x),
-        ParameterSweep(y, lambda: sweep_values_y),
-        ParameterSweep(z, lambda: sweep_values_z),
-        ParameterWrapper(m)
+        Sweep(x, lambda: sweep_values_x),
+        Sweep(y, lambda: sweep_values_y),
+        Sweep(z, lambda: sweep_values_z),
+        Measure(m)
     )
 
     assert list(nest) == [
@@ -100,8 +100,8 @@ def test_error_no_nest_in_measurable():
 
     with pytest.raises(TypeError):
         Nest(
-            ParameterWrapper(m),
-            ParameterSweep(x, lambda: [])
+            Measure(m),
+            Sweep(x, lambda: [])
         )
 
 
@@ -114,8 +114,8 @@ def test_chain_simple():
     sweep_values_y = [4, 5, 6]
 
     parameter_sweep = Chain(
-        ParameterSweep(x, lambda: sweep_values_x),
-        ParameterSweep(y, lambda: sweep_values_y)
+        Sweep(x, lambda: sweep_values_x),
+        Sweep(y, lambda: sweep_values_y)
     )
 
     expected_result = [{x.name: value} for value in sweep_values_x]
@@ -139,10 +139,10 @@ def test_nest_chain():
     sweep_values = [0, 1, 2]
 
     sweep_object = Nest(
-        ParameterSweep(x, lambda: sweep_values),
+        Sweep(x, lambda: sweep_values),
         Chain(
-            ParameterWrapper(m),
-            ParameterWrapper(n)
+            Measure(m),
+            Measure(n)
         )
     )
 
@@ -167,12 +167,12 @@ def test_interleave_1d_2d():
     sweep_values_y = [7, 6, 5]
 
     sweep_object = Nest(
-        ParameterSweep(x, lambda: sweep_values_x),
+        Sweep(x, lambda: sweep_values_x),
         Chain(
-            ParameterWrapper(m),
+            Measure(m),
             Nest(
-                ParameterSweep(y, lambda: sweep_values_y),
-                ParameterWrapper(n)
+                Sweep(y, lambda: sweep_values_y),
+                Measure(n)
             )
         )
     )
@@ -195,10 +195,10 @@ def test_error_no_nest_in_chain():
     with pytest.raises(TypeError):
         Nest(
             Chain(
-                ParameterSweep(x, lambda: sweep_values_x),
-                ParameterSweep(y, lambda: sweep_values_y)
+                Sweep(x, lambda: sweep_values_x),
+                Sweep(y, lambda: sweep_values_y)
             ),
-            ParameterWrapper(m)
+            Measure(m)
         )
 
 
@@ -216,14 +216,14 @@ def test_error_no_nest_in_chain_2():
     sweep_values = [0, 1, 2]
 
     sweep_object = Nest(
-        ParameterSweep(x, lambda: sweep_values),
+        Sweep(x, lambda: sweep_values),
         Chain(
-            ParameterWrapper(m)
+            Measure(m)
         )
     )
 
     with pytest.raises(TypeError):
         Nest(
             sweep_object,
-            ParameterWrapper(n)
+            Measure(n)
         )
