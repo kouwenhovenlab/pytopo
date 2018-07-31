@@ -3,23 +3,44 @@ import pytest
 
 from qcodes import Parameter
 from pytopo.sweep.base import Sweep, Measure, Nest, Chain
+from pytopo.sweep.getter_setter import parameter_setter, parameter_getter
 
 
-def test_sweep_parameter():
-
+@pytest.fixture()
+def params():
     x = Parameter("x", set_cmd=None, get_cmd=None)
+    y = Parameter("y", set_cmd=None, get_cmd=None)
+
+    x.set(0)
+    y.set(0)
+
+    fx = Parameter("fx", get_cmd=lambda: x()**2)
+    fxy = Parameter("fxy", get_cmd=lambda: x()**2+y()**2)
+
+    xstr = parameter_setter(x)
+    ystr = parameter_setter(y)
+
+    fxgtr = parameter_getter(fx)
+    fxygtr = parameter_getter(fxy)
+
+    return xstr, ystr, fxgtr, fxygtr
+
+
+def test_sweep_parameter(params):
+
+    x, y, fx, fxy = params
     sweep_values = [0, 1, 2]
     parameter_sweep = Sweep(x, lambda: sweep_values)
 
-    assert list(parameter_sweep) == [{x.name: value} for value in sweep_values]
+    assert list(parameter_sweep) == [{"x": value} for value in sweep_values]
 
 
-def test_parameter_wrapper():
-    m = Parameter("m", set_cmd=None, get_cmd=None)
-    m.set(3)
-    param_wrapper = Measure(m)
+def test_parameter_wrapper(params):
+    x, y, fx, fxy = params
 
-    assert list(param_wrapper) == [{m.name: m.get()}]
+    param_wrapper = Measure(fx)
+
+    assert list(param_wrapper) == [{"fx": m.get()}]
 
 
 def test_nest():
