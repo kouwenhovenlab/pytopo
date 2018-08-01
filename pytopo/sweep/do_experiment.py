@@ -1,8 +1,12 @@
 import numpy as np
 from warnings import warn
 
+import qcodes
 from qcodes.dataset.data_export import get_data_by_id
 from qcodes.dataset.plotting import plot_by_id
+from qcodes.dataset.experiment_container import load_experiment_by_name, \
+    new_experiment
+from qcodes.dataset.data_set import DataSet
 
 from pytopo.sweep.measurement import SweepMeasurement
 
@@ -42,8 +46,21 @@ class _DataExtractor:
         return self._run_id
 
 
-def do_experiment(sweep_object, setup=None, cleanup=None, experiment=None,
-                  station=None, live_plot=False):
+def do_experiment(
+        experiment_name, sweep_object, setup=None, cleanup=None,
+        station=None, live_plot=False):
+
+    if "/" in experiment_name:
+        experiment_name, sample_name = experiment_name.split("/")
+    else:
+        sample_name = None
+
+    try:
+        experiment = load_experiment_by_name(experiment_name, sample_name)
+    except ValueError:  # experiment does not exist yet
+        db_location = qcodes.config["core"]["db_location"]
+        DataSet(db_location)
+        experiment = new_experiment(experiment_name, sample_name)
 
     def add_actions(action, callables):
         if callables is None:
