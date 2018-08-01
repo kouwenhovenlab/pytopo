@@ -14,14 +14,23 @@ def params():
     x.set(0)
     y.set(0)
 
-    fx = Parameter("fx", get_cmd=lambda: x()**2)
-    fxy = Parameter("fxy", get_cmd=lambda: x()**2+y()**2)
+    fx_call = lambda xv: xv**2
+    fxy_call = lambda xv, yv: xv**2 + yv**2
+
+    fx = Parameter("fx", get_cmd=lambda: fx_call(x()))
+    fxy = Parameter("fxy", get_cmd=lambda: fxy_call(x(), y()))
 
     xstr = parameter_setter(x)
     ystr = parameter_setter(y)
 
+    xstr.get = x.get
+    ystr.get = y.get
+
     fxgtr = parameter_getter(fx)
     fxygtr = parameter_getter(fxy)
+
+    fxgtr.get = fx_call
+    fxygtr.get = fxy_call
 
     return xstr, ystr, fxgtr, fxygtr
 
@@ -37,39 +46,24 @@ def test_sweep_parameter(params):
 
 def test_parameter_wrapper(params):
     x, y, fx, fxy = params
-
-    param_wrapper = Measure(fx)
-
-    assert list(param_wrapper) == [{"fx": m.get()}]
+    assert list(Measure(fx)) == [{"fx": fx.get(x.get())}]
 
 
-def test_nest():
-
-    def f(xvalue):
-        return xvalue**2
-
-    x = Parameter("x", set_cmd=None, get_cmd=None)
-    m = Parameter("m", get_cmd=lambda: f(x()))
-
+def test_nest(params):
+    x, y, fx, fxy = params
     sweep_values = [0, 1, 2]
 
     nest = Nest(
         Sweep(x, lambda: sweep_values),
-        Measure(m)
+        Measure(fx)
     )
 
-    assert list(nest) == [{x.name: xval, m.name: f(xval)}
+    assert list(nest) == [{"x": xval, "fx": fx.get(xval)}
                           for xval in sweep_values]
 
 
-def test_nest_2d():
-
-    def f(xvalue, yvalue):
-        return xvalue**2 + yvalue
-
-    x = Parameter("x", set_cmd=None, get_cmd=None)
-    y = Parameter("y", set_cmd=None, get_cmd=None)
-    m = Parameter("m", get_cmd=lambda: f(x(), y()))
+def test_nest_2d(params):
+    x, y, fx, fxy = params
 
     sweep_values_x = [0, 1, 2]
     sweep_values_y = [5, 6, 7]
@@ -77,59 +71,27 @@ def test_nest_2d():
     nest = Nest(
         Sweep(x, lambda: sweep_values_x),
         Sweep(y, lambda: sweep_values_y),
-        Measure(m)
+        Measure(fxy)
     )
 
     assert list(nest) == [
-        {x.name: xval, y.name: yval, m.name: f(xval, yval)}
+        {"x": xval, "y": yval, "fxy": fxy.get(xval, yval)}
         for xval, yval in itertools.product(sweep_values_x, sweep_values_y)
     ]
 
 
-def test_nest_3d():
-
-    def f(xvalue, yvalue, zvalue):
-        return xvalue**2 + yvalue / zvalue
-
-    x = Parameter("x", set_cmd=None, get_cmd=None)
-    y = Parameter("y", set_cmd=None, get_cmd=None)
-    z = Parameter("z", set_cmd=None, get_cmd=None)
-    m = Parameter("m", get_cmd=lambda: f(x(), y(), z()))
-
-    sweep_values_x = [0, 1, 2]
-    sweep_values_y = [5, 6, 7]
-    sweep_values_z = [3, 6, 9]
-
-    nest = Nest(
-        Sweep(x, lambda: sweep_values_x),
-        Sweep(y, lambda: sweep_values_y),
-        Sweep(z, lambda: sweep_values_z),
-        Measure(m)
-    )
-
-    assert list(nest) == [
-        {x.name: xval, y.name: yval, z.name: zval, m.name: f(xval, yval, zval)}
-        for xval, yval, zval in
-        itertools.product(sweep_values_x, sweep_values_y, sweep_values_z)
-    ]
-
-
-def test_error_no_nest_in_measurable():
-
-    x = Parameter("x")
-    m = Parameter("m")
+def test_error_no_nest_in_measurable(params):
+    x, y, fx, fxy = params
 
     with pytest.raises(TypeError):
         Nest(
-            Measure(m),
+            Measure(fx),
             Sweep(x, lambda: [])
         )
 
 
-def test_chain_simple():
-
-    x = Parameter("x", set_cmd=None, get_cmd=None)
-    y = Parameter("y", set_cmd=None, get_cmd=None)
+def test_chain_simple(params):
+    x, y, fx, fxy = params
 
     sweep_values_x = [0, 1, 2]
     sweep_values_y = [4, 5, 6]
@@ -139,50 +101,37 @@ def test_chain_simple():
         Sweep(y, lambda: sweep_values_y)
     )
 
-    expected_result = [{x.name: value} for value in sweep_values_x]
-    expected_result.extend([{y.name: value} for value in sweep_values_y])
+    expected_result = [{"x": value} for value in sweep_values_x]
+    expected_result.extend([{"y": value} for value in sweep_values_y])
 
     assert list(parameter_sweep) == expected_result
 
 
-def test_nest_chain():
+def test_nest_chain(params):
+    x, y, fx, fxy = params
 
-    def f(xvalue):
-        return xvalue**2
-
-    def g(xvalue):
-        return xvalue + 2
-
-    x = Parameter("x", set_cmd=None, get_cmd=None)
-    m = Parameter("m", get_cmd=lambda: f(x()))
-    n = Parameter("n", get_cmd=lambda: g(x()))
-
-    sweep_values = [0, 1, 2]
+    sweep_values_x = [0, 1, 2]
+    sweep_values_y = [4, 5, 6]
 
     sweep_object = Nest(
-        Sweep(x, lambda: sweep_values),
+        Sweep(x, lambda: sweep_values_x),
+        Sweep(y, lambda: sweep_values_y),
         Chain(
-            Measure(m),
-            Measure(n)
+            Measure(fx),
+            Measure(fxy)
         )
     )
 
-    for xvalue in sweep_values:
-        assert next(sweep_object) == {x.name: xvalue, m.name: f(xvalue)}
-        assert next(sweep_object) == {x.name: xvalue, n.name: g(xvalue)}
+    for xvalue in sweep_values_x:
+        for yvalue in sweep_values_y:
+            assert next(sweep_object) == {
+                "x": xvalue, "y": yvalue, "fx": fx.get(xvalue)}
+            assert next(sweep_object) == {
+                "x": xvalue, "y": yvalue, "fxy": fxy.get(xvalue, yvalue)}
 
 
-def test_interleave_1d_2d():
-    def f(xvalue):
-        return xvalue**2
-
-    def g(xvalue, yvalue):
-        return xvalue + 2 - yvalue
-
-    x = Parameter("x", set_cmd=None, get_cmd=None)
-    y = Parameter("y", set_cmd=None, get_cmd=None)
-    m = Parameter("m", get_cmd=lambda: f(x()))
-    n = Parameter("n", get_cmd=lambda: g(x(), y()))
+def test_interleave_1d_2d(params):
+    x, y, fx, fxy = params
 
     sweep_values_x = [0, 1, 2]
     sweep_values_y = [7, 6, 5]
@@ -190,25 +139,23 @@ def test_interleave_1d_2d():
     sweep_object = Nest(
         Sweep(x, lambda: sweep_values_x),
         Chain(
-            Measure(m),
+            Measure(fx),
             Nest(
                 Sweep(y, lambda: sweep_values_y),
-                Measure(n)
+                Measure(fxy)
             )
         )
     )
 
     for xvalue in sweep_values_x:
-        assert next(sweep_object) == {x.name: xvalue, m.name: f(xvalue)}
+        assert next(sweep_object) == {"x": xvalue, "fx": fx.get(xvalue)}
         for yvalue in sweep_values_y:
-            assert next(sweep_object) == {x.name: xvalue, y.name: yvalue,
-                                          n.name: g(xvalue, yvalue)}
+            assert next(sweep_object) == {"x": xvalue, "y": yvalue,
+                                          "fxy": fxy.get(xvalue, yvalue)}
 
 
-def test_error_no_nest_in_chain():
-    x = Parameter("x", set_cmd=None, get_cmd=None)
-    y = Parameter("y", set_cmd=None, get_cmd=None)
-    m = Parameter("m", set_cmd=None, get_cmd=None)
+def test_error_no_nest_in_chain(params):
+    x, y, fx, fxy = params
 
     sweep_values_x = [0, 1, 2]
     sweep_values_y = [4, 5, 6]
@@ -219,32 +166,23 @@ def test_error_no_nest_in_chain():
                 Sweep(x, lambda: sweep_values_x),
                 Sweep(y, lambda: sweep_values_y)
             ),
-            Measure(m)
+            Measure(fx)
         )
 
 
-def test_error_no_nest_in_chain_2():
-    def f(xvalue):
-        return xvalue**2
-
-    def g(xvalue):
-        return xvalue + 2
-
-    x = Parameter("x", set_cmd=None, get_cmd=None)
-    m = Parameter("m", get_cmd=lambda: f(x()))
-    n = Parameter("n", get_cmd=lambda: g(x()))
-
+def test_error_no_nest_in_chain_2(params):
+    x, y, fx, fxy = params
     sweep_values = [0, 1, 2]
 
     sweep_object = Nest(
         Sweep(x, lambda: sweep_values),
         Chain(
-            Measure(m)
+            Measure(fx)
         )
     )
 
     with pytest.raises(TypeError):
         Nest(
             sweep_object,
-            Measure(n)
+            Measure(fxy)
         )
