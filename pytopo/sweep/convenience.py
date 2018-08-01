@@ -2,7 +2,7 @@ import time
 
 from qcodes import Parameter
 
-from pytopo.sweep.base import Sweep, Measure, Zip, CallSweepObject
+from pytopo.sweep.base import Sweep, Measure, Zip, CallSweepObject, Nest, Chain
 from pytopo.sweep.getter_setter import parameter_setter, parameter_getter
 
 
@@ -64,4 +64,12 @@ def szip(*sweep_objects):
 
 def call(call_function, *args, **kwargs):
     return CallSweepObject(call_function, *args, **kwargs)
+
+
+def nest(*sweep_objects):
+    return Nest(*sweep_objects)
+
+
+def chain(*sweep_objects):
+    return Chain(*sweep_objects)
 
