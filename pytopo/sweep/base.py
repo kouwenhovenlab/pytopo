@@ -1,6 +1,6 @@
 import numpy as np
 
-from typing import Iterator, Callable, List
+from typing import Iterator, Callable
 
 from pytopo.sweep import param_table
 from pytopo.sweep.param_table import ParamTable
