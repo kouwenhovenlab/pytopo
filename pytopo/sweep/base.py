@@ -66,9 +66,16 @@ class IteratorSweep(BaseSweepObject):
         iterator has the effect of setting the independent parameters.
     """
 
-    def __init__(self, iterator_function: Callable)->None:
+    def __init__(
+            self,
+            iterator_function: Callable,
+            parameter_table: ParamTable=None,
+            measurable: bool = False
+    )->None:
         super().__init__()
         self._iterator_function = iterator_function
+        self._parameter_table = parameter_table
+        self._measurable = measurable
 
     def _generator_factory(self) ->Iterator:
         for value in self._iterator_function():

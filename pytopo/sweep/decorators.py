@@ -148,10 +148,9 @@ def hardsweep(ind: List[Tuple], dep: List[Tuple]) ->Callable:
                     res.update({k[0]: v for k, v in zip(dep, measurement)})
                     yield res
 
-            sweep_object = IteratorSweep(wrapper)
-            sweep_object._parameter_table = table.copy()
-            sweep_object._measurable = True
-
+            sweep_object = IteratorSweep(
+                wrapper, parameter_table=table.copy(), measurable=True
+            )
             return sweep_object
 
         return inner

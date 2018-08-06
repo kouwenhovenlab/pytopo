@@ -3,7 +3,7 @@ import pytest
 
 from qcodes import Parameter
 from pytopo.sweep.base import Sweep, Measure, Nest, Chain
-from pytopo.sweep.getter_setter import parameter_setter, parameter_getter
+from pytopo.sweep.decorators import parameter_setter, parameter_getter
 
 
 @pytest.fixture()
