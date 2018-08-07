@@ -39,14 +39,14 @@ def test_sweep_parameter(params):
 
     x, y, fx, fxy = params
     sweep_values = [0, 1, 2]
-    parameter_sweep = Sweep(x, lambda: sweep_values)
+    parameter_sweep = Sweep(*x(), lambda: sweep_values)
 
     assert list(parameter_sweep) == [{"x": value} for value in sweep_values]
 
 
 def test_parameter_wrapper(params):
     x, y, fx, fxy = params
-    assert list(Measure(fx)) == [{"fx": fx.get(x.get())}]
+    assert list(Measure(*fx())) == [{"fx": fx.get(x.get())}]
 
 
 def test_nest(params):
@@ -54,8 +54,8 @@ def test_nest(params):
     sweep_values = [0, 1, 2]
 
     nest = Nest(
-        Sweep(x, lambda: sweep_values),
-        Measure(fx)
+        Sweep(*x(), lambda: sweep_values),
+        Measure(*fx())
     )
 
     assert list(nest) == [{"x": xval, "fx": fx.get(xval)}
@@ -69,9 +69,9 @@ def test_nest_2d(params):
     sweep_values_y = [5, 6, 7]
 
     nest = Nest(
-        Sweep(x, lambda: sweep_values_x),
-        Sweep(y, lambda: sweep_values_y),
-        Measure(fxy)
+        Sweep(*x(), lambda: sweep_values_x),
+        Sweep(*y(), lambda: sweep_values_y),
+        Measure(*fxy())
     )
 
     assert list(nest) == [
@@ -85,8 +85,8 @@ def test_error_no_nest_in_measurable(params):
 
     with pytest.raises(TypeError):
         Nest(
-            Measure(fx),
-            Sweep(x, lambda: [])
+            Measure(*fx()),
+            Sweep(*x(), lambda: [])
         )
 
 
@@ -97,8 +97,8 @@ def test_chain_simple(params):
     sweep_values_y = [4, 5, 6]
 
     parameter_sweep = Chain(
-        Sweep(x, lambda: sweep_values_x),
-        Sweep(y, lambda: sweep_values_y)
+        Sweep(*x(), lambda: sweep_values_x),
+        Sweep(*y(), lambda: sweep_values_y)
     )
 
     expected_result = [{"x": value} for value in sweep_values_x]
@@ -114,11 +114,11 @@ def test_nest_chain(params):
     sweep_values_y = [4, 5, 6]
 
     sweep_object = Nest(
-        Sweep(x, lambda: sweep_values_x),
-        Sweep(y, lambda: sweep_values_y),
+        Sweep(*x(), lambda: sweep_values_x),
+        Sweep(*y(), lambda: sweep_values_y),
         Chain(
-            Measure(fx),
-            Measure(fxy)
+            Measure(*fx()),
+            Measure(*fxy())
         )
     )
 
@@ -137,12 +137,12 @@ def test_interleave_1d_2d(params):
     sweep_values_y = [7, 6, 5]
 
     sweep_object = Nest(
-        Sweep(x, lambda: sweep_values_x),
+        Sweep(*x(), lambda: sweep_values_x),
         Chain(
-            Measure(fx),
+            Measure(*fx()),
             Nest(
-                Sweep(y, lambda: sweep_values_y),
-                Measure(fxy)
+                Sweep(*y(), lambda: sweep_values_y),
+                Measure(*fxy())
             )
         )
     )
@@ -163,10 +163,10 @@ def test_error_no_nest_in_chain(params):
     with pytest.raises(TypeError):
         Nest(
             Chain(
-                Sweep(x, lambda: sweep_values_x),
-                Sweep(y, lambda: sweep_values_y)
+                Sweep(*x(), lambda: sweep_values_x),
+                Sweep(*y(), lambda: sweep_values_y)
             ),
-            Measure(fx)
+            Measure(*fx())
         )
 
 
@@ -175,14 +175,14 @@ def test_error_no_nest_in_chain_2(params):
     sweep_values = [0, 1, 2]
 
     sweep_object = Nest(
-        Sweep(x, lambda: sweep_values),
+        Sweep(*x(), lambda: sweep_values),
         Chain(
-            Measure(fx)
+            Measure(*fx())
         )
     )
 
     with pytest.raises(TypeError):
         Nest(
             sweep_object,
-            Measure(fxy)
+            Measure(*fxy())
         )

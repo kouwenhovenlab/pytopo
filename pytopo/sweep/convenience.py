@@ -14,9 +14,9 @@ def sweep(fun_or_param, set_points):
         fun = fun_or_param
 
     if not callable(set_points):
-        sweep_object = Sweep(fun, lambda: set_points)
+        sweep_object = Sweep(*fun(), lambda: set_points)
     else:
-        sweep_object = Sweep(fun, set_points)
+        sweep_object = Sweep(*fun(), set_points)
 
     return sweep_object
 
@@ -28,7 +28,7 @@ def measure(fun_or_param):
     else:
         fun = fun_or_param
 
-    return Measure(fun)
+    return Measure(*fun())
 
 
 def time_trace(interval_time, total_time=None, stop_condition=None):
