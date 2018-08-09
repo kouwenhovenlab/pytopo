@@ -123,7 +123,8 @@ class Nest(BaseSweepObject):
             for result2 in sweep_object2:
                 for result1 in sweep_object1:
                     if result1 is not None:
-                        result1.update(result2)
+                        if result2 is not None:
+                            result1.update(result2)
                         yield result1
 
         return IteratorSweep(inner)
