@@ -122,10 +122,8 @@ class Nest(BaseSweepObject):
         def inner():
             for result2 in sweep_object2:
                 for result1 in sweep_object1:
-                    if result1 is not None:
-                        if result2 is not None:
-                            result1.update(result2)
-                        yield result1
+                    result1.update(result2)
+                    yield result1
 
         return IteratorSweep(inner)
 
@@ -225,4 +223,4 @@ class CallSweepObject(BaseSweepObject):
 
     def _generator_factory(self):
         self._caller()
-        yield
+        yield {}
