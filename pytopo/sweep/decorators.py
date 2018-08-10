@@ -8,6 +8,27 @@ from pytopo.sweep.param_table import ParamTable
 from pytopo.sweep.base import IteratorSweep
 
 
+class _GetterSetterFunction:
+    def __init__(self, cablle, table):
+        self._caller = cablle
+        self._table = table
+
+    def __call__(self, *args, **kwargs):
+        return self._caller(*args, **kwargs)
+
+    @property
+    def table(self):
+        return self._table
+
+
+class MeasureFunction(_GetterSetterFunction):
+    pass
+
+
+class SweepFunction(_GetterSetterFunction):
+    pass
+
+
 def _generate_tables(names_units: Iterable[Tuple]) ->List[ParamTable]:
     """
     Args:
@@ -39,18 +60,12 @@ def getter(*names_units: Tuple) ->Callable:
 
     table = param_table.add(_generate_tables(names_units))
 
-    def decorator(func: Callable) ->Callable:
-        def inner() ->Tuple[Callable, ParamTable]:
+    def decorator(func: Callable) ->MeasureFunction:
+        def inner() ->dict:
+            results = np.atleast_1d(func())
+            return {k[0]: v for k, v in zip(names_units, results)}
 
-            def wrapper() ->dict:
-                results = np.atleast_1d(func())
-                return {k[0]: v for k, v in zip(names_units, results)}
-
-            return wrapper, table
-
-        inner.getter_setter_decorated = True
-        return inner
-
+        return MeasureFunction(inner, table.copy())
     return decorator
 
 
@@ -68,17 +83,12 @@ def setter(*names_units: Tuple) ->Callable:
 
     table = param_table.prod(_generate_tables(names_units))
 
-    def decorator(func: Callable) ->Callable:
-        def inner() ->Tuple[Callable, ParamTable]:
+    def decorator(func: Callable) ->SweepFunction:
+        def inner(*set_values) ->dict:
+            func(*set_values)
+            return {k[0]: v for k, v in zip(names_units, set_values)}
 
-            def wrapper(*set_values: Any) ->dict:
-                func(*set_values)
-                return {k[0]: v for k, v in zip(names_units, set_values)}
-
-            return wrapper, table
-
-        inner.getter_setter_decorated = True
-        return inner
+        return SweepFunction(inner, table)
     return decorator
 
 

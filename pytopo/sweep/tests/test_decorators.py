@@ -1,15 +1,15 @@
 from qcodes import Parameter
-from pytopo.sweep.decorators import (getter, setter, parameter_getter,
-                                        parameter_setter)
+from pytopo.sweep.decorators import (
+    getter, setter, parameter_getter, parameter_setter
+)
 
 
 def test_getter():
 
     gtr = getter(("a", "A"), ("b", "B"))(lambda: (0, 1))
-    assert hasattr(gtr, "getter_setter_decorated")
+    assert gtr() == {"a": 0, "b": 1}
 
-    _gtr, table = gtr()
-    assert _gtr() == {"a": 0, "b": 1}
+    table = gtr.table
 
     table.resolve_dependencies()
     assert table.nests == [["a"], ["b"]]
@@ -25,11 +25,9 @@ def test_getter():
 def test_setter():
 
     strr = setter(("a", "A"), ("b", "B"))(lambda a, b: None)
-    assert hasattr(strr, "getter_setter_decorated")
+    assert strr(0, 1) == {"a": 0, "b": 1}
 
-    _strr, table = strr()
-    assert _strr(0, 1) == {"a": 0, "b": 1}
-
+    table = strr.table
     table.resolve_dependencies()
     assert table.nests == [["a", "b"]]
     param_a, param_b = table.param_specs
@@ -47,11 +45,10 @@ def test_param_getter():
 
     p = Parameter("p", unit="P", get_cmd=lambda: pval)
     gtr = parameter_getter(p)
-    assert hasattr(gtr, "getter_setter_decorated")
+    table = gtr.table
 
-    _gtr, table = gtr()
     assert table.nests == [["p"]]
-    assert _gtr() == {"p": pval}
+    assert gtr() == {"p": pval}
 
     param_spec, = table.param_specs
     assert param_spec.name == "p"
@@ -62,10 +59,9 @@ def test_param_setter():
 
     p = Parameter("p", unit="P", get_cmd=None, set_cmd=None)
     strr = parameter_setter(p)
-    assert hasattr(strr, "getter_setter_decorated")
+    table = strr.table
 
-    _strr, table = strr()
-    assert _strr(0) == {"p": 0}
+    assert strr(0) == {"p": 0}
     assert p.get() == 0
 
     table.resolve_dependencies()

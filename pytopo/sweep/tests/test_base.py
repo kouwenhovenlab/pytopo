@@ -1,104 +1,160 @@
 import itertools
 import pytest
 
-from qcodes import Parameter
+from qcodes import Parameter, ParamSpec
 from pytopo.sweep.base import Sweep, Measure, Nest, Chain
-from pytopo.sweep.decorators import parameter_setter, parameter_getter
+from pytopo.sweep.param_table import ParamTable
+
+
+class Factory(dict):
+    def __init__(self, func):
+        super().__init__()
+        self._factory = func
+
+    def __getitem__(self, name):
+        if name not in self:
+            self[name] = self._factory(name)
+
+        return super().__getitem__(name)
 
 
 @pytest.fixture()
-def params():
-    x = Parameter("x", set_cmd=None, get_cmd=None)
-    y = Parameter("y", set_cmd=None, get_cmd=None)
+def indep_params():
+    """
+    Fixture of making independent parameters
+    """
+    def mk_tuple(name):
 
-    x.set(0)
-    y.set(0)
+        param = Parameter(name, set_cmd=None, get_cmd=None)
 
-    fx_call = lambda xv: xv**2
-    fxy_call = lambda xv, yv: xv**2 + yv**2
+        def setter(value):
+            param.set(value)
+            return {name: value}
 
-    fx = Parameter("fx", get_cmd=lambda: fx_call(x()))
-    fxy = Parameter("fxy", get_cmd=lambda: fxy_call(x(), y()))
+        return param, setter, ParamTable([ParamSpec(name, "numeric")])
 
-    xstr = parameter_setter(x)
-    ystr = parameter_setter(y)
-
-    xstr.get = x.get
-    ystr.get = y.get
-
-    fxgtr = parameter_getter(fx)
-    fxygtr = parameter_getter(fxy)
-
-    fxgtr.get = fx_call
-    fxygtr.get = fxy_call
-
-    return xstr, ystr, fxgtr, fxygtr
+    return Factory(mk_tuple)
 
 
-def test_sweep_parameter(params):
+@pytest.fixture()
+def dep_params():
+    """
+    Fixture of making dependent parameters
+    """
+    def mk_tuple(name):
 
-    x, y, fx, fxy = params
+        param = Parameter(name, set_cmd=None, get_cmd=None)
+
+        def getter():
+            return {name: param.get()}
+
+        return param, getter, ParamTable([ParamSpec(name, "numeric")])
+
+    return Factory(mk_tuple)
+
+
+def test_sweep_parameter(indep_params):
+
+    px, x, table = indep_params["x"]
+
     sweep_values = [0, 1, 2]
-    parameter_sweep = Sweep(*x(), lambda: sweep_values)
+    parameter_sweep = Sweep(x, table, lambda: sweep_values)
 
     assert list(parameter_sweep) == [{"x": value} for value in sweep_values]
 
 
-def test_parameter_wrapper(params):
-    x, y, fx, fxy = params
-    assert list(Measure(*fx())) == [{"fx": fx.get(x.get())}]
+def test_nest(indep_params, dep_params):
 
+    px, x, tablex = indep_params["x"]
+    pi, i, tablei = dep_params["i"]
 
-def test_nest(params):
-    x, y, fx, fxy = params
+    def f(value): return value**2
+
+    pi.get = lambda: f(px())
+
     sweep_values = [0, 1, 2]
 
     nest = Nest(
-        Sweep(*x(), lambda: sweep_values),
-        Measure(*fx())
+        Sweep(x, tablex, lambda: sweep_values),
+        Measure(i, tablei)
     )
 
-    assert list(nest) == [{"x": xval, "fx": fx.get(xval)}
-                          for xval in sweep_values]
+    assert list(nest) == [{"x": xval, "i": f(xval)} for xval in sweep_values]
 
 
-def test_nest_2d(params):
-    x, y, fx, fxy = params
+def test_nest_2d(indep_params, dep_params):
+    px, x, tablex = indep_params["x"]
+    py, y, tabley = indep_params["y"]
+
+    def f(vx, vy): return vx**2 + vy**2
+
+    pi, i, tablei = dep_params["i"]
+    pi.get = lambda: f(px(), py())
 
     sweep_values_x = [0, 1, 2]
     sweep_values_y = [5, 6, 7]
 
     nest = Nest(
-        Sweep(*x(), lambda: sweep_values_x),
-        Sweep(*y(), lambda: sweep_values_y),
-        Measure(*fxy())
+        Sweep(x, tablex, lambda: sweep_values_x),
+        Sweep(y, tabley, lambda: sweep_values_y),
+        Measure(i, tablei)
     )
 
     assert list(nest) == [
-        {"x": xval, "y": yval, "fxy": fxy.get(xval, yval)}
+        {"x": xval, "y": yval, "i": f(xval, yval)}
         for xval, yval in itertools.product(sweep_values_x, sweep_values_y)
     ]
 
 
-def test_error_no_nest_in_measurable(params):
-    x, y, fx, fxy = params
+def test_nest_3d(indep_params, dep_params):
+    px, x, tablex = indep_params["x"]
+    py, y, tabley = indep_params["y"]
+    pz, z, tablez = indep_params["z"]
+
+    def f(vx, vy, vz): return vx**2 + vy**2 + vz**2
+
+    pi, i, tablei = dep_params["i"]
+    pi.get = lambda: f(px(), py(), pz())
+
+    sweep_values_x = [0, 1, 2]
+    sweep_values_y = [5, 6, 7]
+    sweep_values_z = [8, 9, 10]
+
+    nest = Nest(
+        Sweep(x, tablex, lambda: sweep_values_x),
+        Sweep(y, tabley, lambda: sweep_values_y),
+        Sweep(z, tablez, lambda: sweep_values_z),
+        Measure(i, tablei)
+    )
+
+    assert list(nest) == [
+        {"x": xval, "y": yval, "z": zval, "i": f(xval, yval, zval)}
+        for xval, yval, zval in itertools.product(
+            sweep_values_x, sweep_values_y, sweep_values_z)
+    ]
+
+
+def test_error_no_nest_in_measurable(indep_params, dep_params):
+    px, x, tablex = indep_params["x"]
+    pi, i, tablei = dep_params["i"]
 
     with pytest.raises(TypeError):
         Nest(
-            Measure(*fx()),
-            Sweep(*x(), lambda: [])
+            Measure(i, tablei),
+            Sweep(x, tablex, lambda: [])
         )
 
 
-def test_chain_simple(params):
-    x, y, fx, fxy = params
+def test_chain_simple(indep_params):
+    px, x, tablex = indep_params["x"]
+    py, y, tabley = indep_params["y"]
 
     sweep_values_x = [0, 1, 2]
     sweep_values_y = [4, 5, 6]
 
     parameter_sweep = Chain(
-        Sweep(*x(), lambda: sweep_values_x),
-        Sweep(*y(), lambda: sweep_values_y)
+        Sweep(x, tablex, lambda: sweep_values_x),
+        Sweep(y, tabley, lambda: sweep_values_y)
     )
 
     expected_result = [{"x": value} for value in sweep_values_x]
@@ -107,55 +163,86 @@ def test_chain_simple(params):
     assert list(parameter_sweep) == expected_result
 
 
-def test_nest_chain(params):
-    x, y, fx, fxy = params
+def test_nest_chain(indep_params, dep_params):
+    px, x, tablex = indep_params["x"]
+    py, y, tabley = indep_params["y"]
+
+    pi, i, tablei = dep_params["i"]
+    pj, j, tablej = dep_params["j"]
+
+    def f(vx, vy):
+        return vx**2 + vy**3
+
+    pi.get = lambda: f(px(), py())
+
+    def g(vx, vy):
+        return vx**2 + vy**2
+
+    pj.get = lambda: g(px(), py())
 
     sweep_values_x = [0, 1, 2]
     sweep_values_y = [4, 5, 6]
 
     sweep_object = Nest(
-        Sweep(*x(), lambda: sweep_values_x),
-        Sweep(*y(), lambda: sweep_values_y),
+        Sweep(x, tablex, lambda: sweep_values_x),
+        Sweep(y, tabley, lambda: sweep_values_y),
         Chain(
-            Measure(*fx()),
-            Measure(*fxy())
+            Measure(i, tablei),
+            Measure(j, tablej)
         )
     )
 
     for xvalue in sweep_values_x:
         for yvalue in sweep_values_y:
             assert next(sweep_object) == {
-                "x": xvalue, "y": yvalue, "fx": fx.get(xvalue)}
+                "x": xvalue, "y": yvalue, "i": f(xvalue, yvalue)}
             assert next(sweep_object) == {
-                "x": xvalue, "y": yvalue, "fxy": fxy.get(xvalue, yvalue)}
+                "x": xvalue, "y": yvalue, "j": g(xvalue, yvalue)}
 
 
-def test_interleave_1d_2d(params):
-    x, y, fx, fxy = params
+def test_interleave_1d_2d(indep_params, dep_params):
+    px, x, tablex = indep_params["x"]
+    py, y, tabley = indep_params["y"]
+
+    pi, i, tablei = dep_params["i"]
+    pj, j, tablej = dep_params["j"]
+
+    def f(vx):
+        return vx ** 2
+
+    pi.get = lambda: f(px())
+
+    def g(vx, vy):
+        return vx ** 2 + vy ** 2
+
+    pj.get = lambda: g(px(), py())
 
     sweep_values_x = [0, 1, 2]
-    sweep_values_y = [7, 6, 5]
+    sweep_values_y = [4, 5, 6]
 
     sweep_object = Nest(
-        Sweep(*x(), lambda: sweep_values_x),
+        Sweep(x, tablex, lambda: sweep_values_x),
         Chain(
-            Measure(*fx()),
+            Measure(i, tablei),
             Nest(
-                Sweep(*y(), lambda: sweep_values_y),
-                Measure(*fxy())
+                Sweep(y, tabley, lambda: sweep_values_y),
+                Measure(j, tablej)
             )
         )
     )
 
     for xvalue in sweep_values_x:
-        assert next(sweep_object) == {"x": xvalue, "fx": fx.get(xvalue)}
+        assert next(sweep_object) == {"x": xvalue, "i": f(xvalue)}
         for yvalue in sweep_values_y:
             assert next(sweep_object) == {"x": xvalue, "y": yvalue,
-                                          "fxy": fxy.get(xvalue, yvalue)}
+                                          "j":g(xvalue, yvalue)}
 
 
-def test_error_no_nest_in_chain(params):
-    x, y, fx, fxy = params
+def test_error_no_nest_in_chain(indep_params, dep_params):
+    px, x, tablex = indep_params["x"]
+    py, y, tabley = indep_params["y"]
+
+    pi, i, tablei = dep_params["i"]
 
     sweep_values_x = [0, 1, 2]
     sweep_values_y = [4, 5, 6]
@@ -163,26 +250,29 @@ def test_error_no_nest_in_chain(params):
     with pytest.raises(TypeError):
         Nest(
             Chain(
-                Sweep(*x(), lambda: sweep_values_x),
-                Sweep(*y(), lambda: sweep_values_y)
+                Sweep(x, tablex, lambda: sweep_values_x),
+                Sweep(y, tabley, lambda: sweep_values_y)
             ),
-            Measure(*fx())
+            Measure(i, tablei)
         )
 
 
-def test_error_no_nest_in_chain_2(params):
-    x, y, fx, fxy = params
+def test_error_no_nest_in_chain_2(indep_params, dep_params):
+    px, x, tablex = indep_params["x"]
+    pi, i, tablei = dep_params["i"]
+    pj, j, tablej = dep_params["j"]
+
     sweep_values = [0, 1, 2]
 
     sweep_object = Nest(
-        Sweep(*x(), lambda: sweep_values),
+        Sweep(x, tablex, lambda: sweep_values),
         Chain(
-            Measure(*fx())
+            Measure(i, tablei)
         )
     )
 
     with pytest.raises(TypeError):
         Nest(
             sweep_object,
-            Measure(*fxy())
+            Measure(j, tablej)
         )
