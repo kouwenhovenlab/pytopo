@@ -17,7 +17,7 @@ class _GetterSetterFunction:
         return self._caller(*args, **kwargs)
 
     @property
-    def table(self):
+    def parameter_table(self):
         return self._table
 
 
