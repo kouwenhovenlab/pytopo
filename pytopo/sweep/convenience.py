@@ -20,9 +20,9 @@ def sweep(fun_or_param, set_points):
                          "decorated with pytopo.setter")
 
     if not callable(set_points):
-        sweep_object = Sweep(fun, fun.table, lambda: set_points)
+        sweep_object = Sweep(fun, fun.parameter_table, lambda: set_points)
     else:
-        sweep_object = Sweep(fun, fun.table, set_points)
+        sweep_object = Sweep(fun, fun.parameter_table, set_points)
 
     return sweep_object
 
@@ -37,7 +37,7 @@ def measure(fun_or_param):
         raise ValueError("Can only measure a QCoDeS parameter or a function "
                          "decorated with pytopo.getter")
 
-    return Measure(fun, fun.table)
+    return Measure(fun, fun.parameter_table)
 
 
 def time_trace(interval_time, total_time=None, stop_condition=None):
