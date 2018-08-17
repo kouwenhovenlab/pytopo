@@ -434,6 +434,9 @@ class AvgIQCtl(AvgDemodCtl):
         Returns:
             A tuple of the sizes of the data dimensions.
         """
+        # really call super so that cos and sin arrays are setup correctly
+        # for demodulation
+        super().data_shape()
         return (self.records_per_buffer(),
                 self.number_of_channels)
 
@@ -470,6 +473,9 @@ class AvgRecIQCtl(AvgRecDemodCtl):
         Returns:
             A tuple of the sizes of the data dimensions.
         """
+        # really call super so that cos and sin arrays are setup correctly
+        # for demodulation
+        super().data_shape()
         return (self.buffers_per_acquisition(),
                 self.number_of_channels)
 
