@@ -8,3 +8,4 @@ labpythonconfig.py
 *.pdf
 pytopo.egg-info
 .idea
+.pytest_cache
