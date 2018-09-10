@@ -23,14 +23,12 @@ class Pin(Parameter):
 
     def __init__(self, name, label, transformation=UnityTransformation,
                  **kwargs):
-        self.transformation = transformation
+        self.transformation = transformation()
 
         super().__init__(name,
                          get_cmd=None, set_cmd=None,
-                         get_parser=partial(self.transformation.forward,
-                                            self.transformation),
-                         set_parser=partial(self.transformation.backward,
-                                            self.transformation),
+                         get_parser=self._transform_forward,
+                         set_parser=self._transform_backward,
                          **kwargs)
 
         self.label = label  # override Parameter's label...
@@ -39,3 +37,9 @@ class Pin(Parameter):
 
     def __repr__(self):
         return f'Pin {self.name!r} - {self.label!r}'
+
+    def _transform_forward(self, value):
+        return self.transformation.forward(value)
+
+    def _transform_backward(self, value):
+        return self.transformation.backward(value)

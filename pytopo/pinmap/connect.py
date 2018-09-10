@@ -1,5 +1,5 @@
 from pytopo.pinmap.devices import Device
-from pytopo.pinmap.transformations import nest_transformation
+from pytopo.pinmap.transformations import connect
 
 
 def connect_pins(of: Device, to: Device, using_map: dict):
@@ -15,9 +15,7 @@ def connect_pins(of: Device, to: Device, using_map: dict):
         raise Exception(f'Not all {of_pins_from_map!r} are in device {of!s}')
 
     for of_pin, to_pin in using_map.items():
-        of.pin_by_label(of_pin).transformation = nest_transformation(
-            this=to.pin_by_label(to_pin).transformation,
-            into=of.pin_by_label(of_pin).transformation
+        of.pin_by_label(of_pin).transformation = connect(
+            pin=to.pin_by_label(to_pin),
+            via=of.pin_by_label(of_pin).transformation
         )
-
-    print('done!')

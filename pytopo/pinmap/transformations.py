@@ -1,3 +1,6 @@
+from pytopo.pinmap.pin import Pin
+
+
 class Transformation:
     """
     Interface for defining how value is propagated forward and backward
@@ -5,6 +8,8 @@ class Transformation:
     TODO:
     * should it work on value or on Parameter or Pin?
     """
+    def __init__(self):
+        super().__init__()
 
     def forward(self, value):
         raise NotImplemented
@@ -14,6 +19,9 @@ class Transformation:
 
 
 class UnityTransformation(Transformation):
+    def __init__(self):
+        super().__init__()
+
     def forward(self, value):
         return value
 
@@ -22,6 +30,9 @@ class UnityTransformation(Transformation):
 
 
 class AddOneTransformation(Transformation):
+    def __init__(self):
+        super().__init__()
+
     def forward(self, value):
         return value + 1
 
@@ -29,19 +40,18 @@ class AddOneTransformation(Transformation):
         return value - 1
 
 
-class NestedTransformation(Transformation):
-    def __init__(self, outer: Transformation, inner: Transformation):
+class PinConnectionTransformation(Transformation):
+    def __init__(self, pin: Pin, via: Transformation):
         super().__init__()
-        self._inner = inner
-        self._outer = outer
+        self._pin = pin
+        self._via_transformation = via
 
     def forward(self, value):
-        return self._outer.forward(self._inner.forward(value))
+        return self._via_transformation.forward(self._pin.get())
 
     def backward(self, value):
-        return self._inner.backward(self._outer.backward(value))
+        return self._pin.set(self._via_transformation.backward(value))
 
 
-def nest_transformation(this: Transformation,
-                        into: Transformation) -> Transformation:
-    return NestedTransformation(into, this)
+def connect(pin: Pin, via: Transformation) -> Transformation:
+    return PinConnectionTransformation(pin, via)
