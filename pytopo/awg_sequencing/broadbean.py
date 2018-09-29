@@ -5,6 +5,7 @@ A set of tools to make working with the broadbean awg sequencer a bit more conve
 
 import numpy as np
 import broadbean as bb
+from broadbean.plotting import plotter
 
 from qcodes.instrument_drivers.tektronix.AWG5208 import AWG5208
 from qcodes.instrument_drivers.tektronix.AWG5014 import Tektronix_AWG5014 as AWG5014
@@ -128,6 +129,12 @@ class BroadBeanSequence():
 
         if self.chan_settings is None:
             self.chan_settings = default_chan_settings()
+        else:
+            _chan_settings = default_chan_settings()
+            for i, settings in self.chan_settings.items():
+                _chan_settings[i].update(settings)
+            self.chan_settings = _chan_settings
+
             if chan_settings is not None:
                 for i, settings in chan_settings.items():
                     self.chan_settings[i].update(settings)
@@ -135,7 +142,7 @@ class BroadBeanSequence():
     def sequence(self, **kw):
         raise NotImplementedError
         
-    def setup_awg(self, program_awg=True, start_awg=True, stop_awg=True, **kw):       
+    def setup_awg(self, program_awg=True, start_awg=True, stop_awg=True, plot=False, **kw):       
         if stop_awg:
             self.awg.stop()
         
@@ -163,6 +170,10 @@ class BroadBeanSequence():
                 pass
             else:
                 raise ValueError("Unknown sweep_repeat setting '{}".format(self.repeat_mode))
+
+            # plot if required
+            if plot:
+                plotter(seq)
 
             if isinstance(self.awg, AWG5014):
                 pkg = seq.outputForAWGFile()
