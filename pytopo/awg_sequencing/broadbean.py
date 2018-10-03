@@ -151,9 +151,9 @@ class BroadBeanSequence():
             seq = self.sequence(**kw)
             seq.setSR(self.SR)
             
-            # for ch_no, ch_set in self.chan_settings.items():
-            #     seq.setChannelAmplitude(ch_no, ch_set['Vpp'] * 0)
-            #     seq.setChannelOffset(ch_no, ch_set['offset'])
+            for ch_no, ch_set in self.chan_settings.items():
+                seq.setChannelAmplitude(ch_no, ch_set['Vpp'])
+                seq.setChannelOffset(ch_no, ch_set['offset'])
             
             if self.wait == 'first':
                 seq.setSequencingTriggerWait(1, 1)
@@ -179,7 +179,7 @@ class BroadBeanSequence():
                 pkg = seq.outputForAWGFile()
                 self.awg.make_send_and_load_awg_file(*pkg[:])
 
-                for ch_no in self.chan_map.items():
+                for ch_no, ch_lst in self.chan_map.items():
                     self.awg.set('ch{}_state'.format(ch_no), 1)
 
                 for ch_no, ch_set in self.chan_settings.items():
