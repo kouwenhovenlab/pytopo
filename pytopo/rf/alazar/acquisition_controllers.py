@@ -73,7 +73,7 @@ class BaseAcqCtl(AcquisitionController):
             return
 
         nsamples = int(nsamples)
-        print(f'Allocating {nsamples} elements ({self.samples2MB(nsamples)} MB)')
+        print(f'Allocating {nsamples} elements ({self.samples2MB(nsamples)} MB, dtype: {self._datadtype})')
         self.data = np.zeros(nsamples, dtype=self._datadtype) 
         
         # this is to circumvent lazy allocation of data
