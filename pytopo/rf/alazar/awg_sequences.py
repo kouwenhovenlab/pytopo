@@ -92,6 +92,8 @@ class TriggerSequence(BroadBeanSequence):
                 bps['pulse'].insertSegment(1, ramp, (0, 0), name='trigger', dur=trig_time)
                 bps['pulse'].insertSegment(2, sine, (1e6, 0.5, 0, 0), name='dbg_pulse', dur=low_time)
                 bps['pulse'].insertSegment(3, ramp, (0, 0), dur=end_buffer)
+            else:
+                bps['pulse'].insertSegment(0, ramp, (0, 0), dur=cycle_time)
             
             bps['ats_trigger'] = [(pre_trig_time, trig_time)]
             elements.append(bbtools.blueprints2element(bps))
