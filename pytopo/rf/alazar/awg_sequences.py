@@ -75,11 +75,13 @@ class TriggerSequence(BroadBeanSequence):
     required channels:
         'pulse' : analog output (for the 'debug' signal)
         'ats_trigger' : marker output
+        'ro_trigger' : readout trigger (optional)
     """
     name = 'trigger_sequence'
 
     def sequence(self, trig_time=1e-6, cycle_time=10e-6,
-                 pre_trig_time=1e-6, ncycles=1, debug_signal=False):
+                 pre_trig_time=1e-6, ncycles=1, debug_signal=False,
+                 ro_trigger_always_on=False):
 
         end_buffer = 1e-6
         low_time = cycle_time - trig_time - pre_trig_time - end_buffer
@@ -96,6 +98,15 @@ class TriggerSequence(BroadBeanSequence):
                 bps['pulse'].insertSegment(0, ramp, (0, 0), dur=cycle_time)
             
             bps['ats_trigger'] = [(pre_trig_time, trig_time)]
+            if 'ro_trigger' in bps.map:
+                if ro_trigger_always_on:
+                    t0, t1 = 0, cycle_time
+                else:
+                    t0, t1 = pre_trig_time + trig_time, low_time
+                bps['ro_trigger'] = [(t0, t1)]
+            else:
+                print('ro_trigger not defined. omitting.')
+
             elements.append(bbtools.blueprints2element(bps))
         
         return bbtools.elements2sequence(elements, self.name)
