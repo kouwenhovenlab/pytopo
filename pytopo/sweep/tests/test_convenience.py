@@ -92,7 +92,7 @@ def test_sanity_sweep_getter_function(sweep_functions):
 
 def test_error():
     """
-    Setter functions need to be decorated with pytopo.setter
+    Setter functions need to be decorated with `setter`
     """
 
     def no_good_setter(value):
@@ -100,4 +100,3 @@ def test_error():
 
     with pytest.raises(ValueError):
         sweep(no_good_setter, [0, 1])
-
