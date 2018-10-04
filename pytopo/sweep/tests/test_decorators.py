@@ -5,38 +5,43 @@ from pytopo.sweep.decorators import (
 
 
 def test_getter():
-
-    gtr = getter(("a", "A"), ("b", "B"))(lambda: (0, 1))
+    gtr = getter(("a", "A"), ("b", "B", "array"))(lambda: (0, 1))
     assert gtr() == {"a": 0, "b": 1}
 
     table = gtr.parameter_table
-
     table.resolve_dependencies()
+
     assert table.nests == [["a"], ["b"]]
+
     param_a, param_b = table.param_specs
 
     assert param_a.name == "a"
     assert param_a.unit == "A"
+    assert param_a.type == "numeric"
 
     assert param_b.name == "b"
     assert param_b.unit == "B"
+    assert param_b.type == "array"
 
 
 def test_setter():
-
-    strr = setter(("a", "A"), ("b", "B"))(lambda a, b: None)
+    strr = setter(("a", "A"), ("b", "B", "array"))(lambda a, b: None)
     assert strr(0, 1) == {"a": 0, "b": 1}
 
     table = strr.parameter_table
     table.resolve_dependencies()
+
     assert table.nests == [["a", "b"]]
+
     param_a, param_b = table.param_specs
 
     assert param_a.name == "a"
     assert param_a.unit == "A"
+    assert param_a.type == "numeric"
 
     assert param_b.name == "b"
     assert param_b.unit == "B"
+    assert param_b.type == "array"
 
 
 def test_param_getter():
