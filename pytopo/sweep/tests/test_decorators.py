@@ -45,11 +45,11 @@ def test_setter():
 
 
 def test_param_getter():
-
     pval = 0
 
     p = Parameter("p", unit="P", get_cmd=lambda: pval)
     gtr = parameter_getter(p)
+
     table = gtr.parameter_table
 
     assert table.nests == [["p"]]
@@ -58,20 +58,60 @@ def test_param_getter():
     param_spec, = table.param_specs
     assert param_spec.name == "p"
     assert param_spec.unit == "P"
+    assert param_spec.type == "numeric"
 
 
 def test_param_setter():
-
     p = Parameter("p", unit="P", get_cmd=None, set_cmd=None)
     strr = parameter_setter(p)
+
     table = strr.parameter_table
 
     assert strr(0) == {"p": 0}
     assert p.get() == 0
 
     table.resolve_dependencies()
+
     assert table.nests == [["p"]]
+
     param_spec, = table.param_specs
 
     assert param_spec.name == "p"
     assert param_spec.unit == "P"
+    assert param_spec.type == "numeric"
+
+
+def test_param_getter_with_paramtype():
+    pval = 0
+
+    p = Parameter("p", unit="P", get_cmd=lambda: pval)
+    gtr = parameter_getter(p, paramtype='array')
+    table = gtr.parameter_table
+
+    assert table.nests == [["p"]]
+    assert gtr() == {"p": pval}
+
+    param_spec, = table.param_specs
+    assert param_spec.name == "p"
+    assert param_spec.unit == "P"
+    assert param_spec.type == "array"
+
+
+def test_param_setter_with_paramtype():
+
+    p = Parameter("p", unit="P", get_cmd=None, set_cmd=None)
+    strr = parameter_setter(p, paramtype='array')
+    table = strr.parameter_table
+
+    assert strr(0) == {"p": 0}
+    assert p.get() == 0
+
+    table.resolve_dependencies()
+
+    assert table.nests == [["p"]]
+
+    param_spec, = table.param_specs
+
+    assert param_spec.name == "p"
+    assert param_spec.unit == "P"
+    assert param_spec.type == "array"

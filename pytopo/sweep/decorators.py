@@ -200,11 +200,17 @@ def hardsweep(ind: List[Tuple], dep: List[Tuple]) ->Callable:
     return decorator
 
 
-def parameter_setter(parameter):
-    names_units = (parameter.full_name, parameter.unit)
+def parameter_setter(parameter, paramtype: str = None):
+    if paramtype:
+        names_units = (parameter.full_name, parameter.unit, paramtype)
+    else:
+        names_units = (parameter.full_name, parameter.unit)
     return setter(names_units)(parameter.set)
 
 
-def parameter_getter(parameter):
-    names_units = (parameter.full_name, parameter.unit)
+def parameter_getter(parameter, paramtype: str = None):
+    if paramtype:
+        names_units = (parameter.full_name, parameter.unit, paramtype)
+    else:
+        names_units = (parameter.full_name, parameter.unit)
     return getter(names_units)(parameter.get)

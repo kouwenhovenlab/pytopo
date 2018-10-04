@@ -9,10 +9,10 @@ from pytopo.sweep.decorators import (
 )
 
 
-def sweep(fun_or_param, set_points):
+def sweep(fun_or_param, set_points, paramtype: str = None):
 
     if isinstance(fun_or_param, Parameter):
-        fun = parameter_setter(fun_or_param)
+        fun = parameter_setter(fun_or_param, paramtype=paramtype)
     elif isinstance(fun_or_param, SweepFunction):
         fun = fun_or_param
     else:
@@ -27,10 +27,10 @@ def sweep(fun_or_param, set_points):
     return sweep_object
 
 
-def measure(fun_or_param):
+def measure(fun_or_param, paramtype: str = None):
 
     if isinstance(fun_or_param, Parameter):
-        fun = parameter_getter(fun_or_param)
+        fun = parameter_getter(fun_or_param, paramtype=paramtype)
     elif isinstance(fun_or_param, MeasureFunction):
         fun = fun_or_param
     else:
