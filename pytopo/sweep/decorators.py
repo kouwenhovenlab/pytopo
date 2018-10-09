@@ -31,31 +31,59 @@ class SweepFunction(_GetterSetterFunction):
 
 def _generate_tables(names_units: Iterable[Tuple]) ->List[ParamTable]:
     """
+    Generates ParamTables from a simple input list of tuples which describe
+    the parameters.
+
     Args:
-        names_units: List of tuples with parameter names and units, e.g.
-            [("gate", "V"), ("Isd", "A")]
+        names_units
+            List of tuples with parameter names and units; optionally,
+            'paramtype' can be supplied that defines the way the parameter
+            values are saved ('numeric' is a default).
+            Example: [("gate", "V"), ("Isd", "A", "array")]
 
     Returns:
-        A list of ParamTable with each table containing a single spec
+        A list of ParamTable with each table containing a single ParamSpec
     """
-    return [ParamTable([ParamSpec(
-        name=name,
-        paramtype='numeric',
-        unit=unit,
-        label=name
-    )]) for name, unit in names_units]
+    param_tables = []
+
+    for name_unit in names_units:
+        name = name_unit[0]
+        unit = name_unit[1]
+
+        if len(name_unit) > 2:
+            paramtype = name_unit[2]
+        else:
+            paramtype = 'numeric'
+
+        param_tables.append(
+            ParamTable([
+                ParamSpec(
+                    name=name,
+                    paramtype=paramtype,
+                    unit=unit,
+                    label=name
+                )
+            ])
+        )
+
+    return param_tables
 
 
 def getter(*names_units: Tuple) ->Callable:
     """
     Args:
-        names_units: List of tuples with parameter names and units, e.g.
-            [("gate", "V"), ("Isd", "A")]
+        names_units
+            List of tuples with parameter names and units (and optionally
+            'paramtype' that defines how the data is saved),
+            e.g. [("gate", "V"), ("Isd", "A", "array")]
 
     Returns:
         A decorator. The decorated function returns a callable and a parameter
         table. The callable calls the decorated function which should return
         measurement values.
+
+    For more information about 'paramtype' argument, see `register_parameter`
+    method of `Measurement` class in QCoDeS.
     """
 
     table = param_table.add(_generate_tables(names_units))
@@ -72,13 +100,18 @@ def getter(*names_units: Tuple) ->Callable:
 def setter(*names_units: Tuple) ->Callable:
     """
     Args:
-        names_units: List of tuples with parameter names and units, e.g.
-            [("gate", "V"), ("Isd", "A")]
+        names_units
+            List of tuples with parameter names and units (and optionally
+            'paramtype' that defines how the data is saved),
+            e.g. [("gate", "V"), ("Isd", "A", "array")]
 
     Returns:
         A decorator. The decorated function returns a callable and a parameter
         table. The callable calls the decorated function this the argument
         provided. This will set independent parameters
+
+    For more information about 'paramtype' argument, see `register_parameter`
+    method of `Measurement` class in QCoDeS.
     """
 
     table = param_table.prod(_generate_tables(names_units))
@@ -96,9 +129,9 @@ def hardsweep(ind: List[Tuple], dep: List[Tuple]) ->Callable:
     """
     Args:
         ind: List of independent parameters, defined as tuples of names and
-                units.
+                units (and optionally 'paramtype').
         dep: List of dependent parameters, defined as tuples of names and
-                units.
+                units (and optionally 'paramtype').
 
     Returns:
         A decorator which returns a sweep object, which can be directly used
@@ -167,11 +200,17 @@ def hardsweep(ind: List[Tuple], dep: List[Tuple]) ->Callable:
     return decorator
 
 
-def parameter_setter(parameter):
-    names_units = (parameter.full_name, parameter.unit)
+def parameter_setter(parameter, paramtype: str = None):
+    if paramtype:
+        names_units = (parameter.full_name, parameter.unit, paramtype)
+    else:
+        names_units = (parameter.full_name, parameter.unit)
     return setter(names_units)(parameter.set)
 
 
-def parameter_getter(parameter):
-    names_units = (parameter.full_name, parameter.unit)
+def parameter_getter(parameter, paramtype: str = None):
+    if paramtype:
+        names_units = (parameter.full_name, parameter.unit, paramtype)
+    else:
+        names_units = (parameter.full_name, parameter.unit)
     return getter(names_units)(parameter.get)
