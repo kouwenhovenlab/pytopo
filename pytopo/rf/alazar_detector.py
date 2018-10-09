@@ -66,7 +66,7 @@ class AlazarBaseDetector(HardSweepDetector):
 class AlazarDetector(AlazarBaseDetector):
     
     def __init__(self, name, acqctl, **kwargs):
-        kwargs['sweep_params'] = ['buffers', 'records']
+        # kwargs['sweep_params'] = ['buffers', 'records']
         
         super().__init__(name, acqctl, **kwargs)
         

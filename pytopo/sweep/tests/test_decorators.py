@@ -9,7 +9,7 @@ def test_getter():
     gtr = getter(("a", "A"), ("b", "B"))(lambda: (0, 1))
     assert gtr() == {"a": 0, "b": 1}
 
-    table = gtr.table
+    table = gtr.parameter_table
 
     table.resolve_dependencies()
     assert table.nests == [["a"], ["b"]]
@@ -27,7 +27,7 @@ def test_setter():
     strr = setter(("a", "A"), ("b", "B"))(lambda a, b: None)
     assert strr(0, 1) == {"a": 0, "b": 1}
 
-    table = strr.table
+    table = strr.parameter_table
     table.resolve_dependencies()
     assert table.nests == [["a", "b"]]
     param_a, param_b = table.param_specs
@@ -45,7 +45,7 @@ def test_param_getter():
 
     p = Parameter("p", unit="P", get_cmd=lambda: pval)
     gtr = parameter_getter(p)
-    table = gtr.table
+    table = gtr.parameter_table
 
     assert table.nests == [["p"]]
     assert gtr() == {"p": pval}
@@ -59,7 +59,7 @@ def test_param_setter():
 
     p = Parameter("p", unit="P", get_cmd=None, set_cmd=None)
     strr = parameter_setter(p)
-    table = strr.table
+    table = strr.parameter_table
 
     assert strr(0) == {"p": 0}
     assert p.get() == 0
