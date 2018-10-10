@@ -154,6 +154,11 @@ def hardsweep(ind: List[Tuple], dep: List[Tuple]) ->Callable:
         However, the return value of this function has to consist of two numpy
         arrays with the aforementioned shape.
 
+        Note that if any of the parameters has 'array' paramtype, then the
+        arrays that are potentially returned by the decorated function will
+        not be iterated through. Instead, they will be passed "as is"
+        together with the 'numeric' values (if any).
+
         Please see pytopo/sweep/docs/hardsweep.ipynb for a more elaborate
         example
     """
@@ -173,6 +178,11 @@ def hardsweep(ind: List[Tuple], dep: List[Tuple]) ->Callable:
     def decorator(func: Callable) ->Callable:
         def inner(*args, **kwargs) ->IteratorSweep:
 
+            ind_paramtypes = [i[2] if len(i) > 2 else 'numeric' for i in ind]
+            dep_paramtypes = [d[2] if len(d) > 2 else 'numeric' for d in dep]
+            any_array = np.any(np.array([ind_paramtypes + dep_paramtypes])
+                               == 'array')
+
             def wrapper() ->dict:
                 spoints, measurements = func(*args, **kwargs)
 
@@ -185,11 +195,15 @@ def hardsweep(ind: List[Tuple], dep: List[Tuple]) ->Callable:
                     raise ValueError("The number of points or measurements "
                                      "returned does not match the number of "
                                      "dependent and/or independent parameters")
-
-                for spoint, measurement in zip(spoints.T, measurements.T):
-                    res = {k[0]: v for k, v in zip(ind, spoint)}
-                    res.update({k[0]: v for k, v in zip(dep, measurement)})
+                if any_array:
+                    res = {k[0]: v for k, v in zip(ind, spoints)}
+                    res.update({k[0]: v for k, v in zip(dep, measurements)})
                     yield res
+                else:
+                    for spoint, measurement in zip(spoints.T, measurements.T):
+                        res = {k[0]: v for k, v in zip(ind, spoint)}
+                        res.update({k[0]: v for k, v in zip(dep, measurement)})
+                        yield res
 
             sweep_object = IteratorSweep(
                 wrapper, parameter_table=table.copy(), measurable=True
