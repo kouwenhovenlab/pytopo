@@ -186,10 +186,25 @@ def hardsweep(ind: List[Tuple], dep: List[Tuple]) ->Callable:
                                      "returned does not match the number of "
                                      "dependent and/or independent parameters")
 
-                for spoint, measurement in zip(spoints.T, measurements.T):
-                    res = {k[0]: v for k, v in zip(ind, spoint)}
-                    res.update({k[0]: v for k, v in zip(dep, measurement)})
-                    yield res
+                # let's make a distinction here:
+                # if all params have been specified to be array typed, then we'll 
+                # return the full result of this hardsweep measurement as array.
+                # else we use numeric, which breaks up all arrays/lists into individual
+                # datapoints.
+                param_types = [ a[-1] if len(a) > 2 else 'numeric' for a in ind ]
+                param_types += [ a[-1] if len(a) > 2 else 'numeric' for a in dep ]
+                if 'array' in set(param_types) and not 'numeric' in set(param_types):
+                    for spoint, measurement in zip(spoints, measurements):
+                        spoint, measurement = np.atleast_2d(spoint), np.atleast_2d(measurement)
+                        res = {k[0]: v for k, v in zip(ind, spoint)}
+                        res.update({k[0]: v for k, v in zip(dep, measurement)})
+                        yield res
+
+                else:
+                    for spoint, measurement in zip(spoints.T, measurements.T):
+                        res = {k[0]: v for k, v in zip(ind, spoint)}
+                        res.update({k[0]: v for k, v in zip(dep, measurement)})
+                        yield res
 
             sweep_object = IteratorSweep(
                 wrapper, parameter_table=table.copy(), measurable=True
