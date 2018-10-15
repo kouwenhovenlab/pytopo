@@ -1,3 +1,41 @@
+'''
+Written by John Watson, 2018
+john.watson@microsoft.com
+Not for distribution outside Microsoft Quantum
+'''
+
+
+'''
+This script is written to automate checking a die for continuity.
+
+It assumes the setup has two MDACs with the microD cables connected directly to the MDAC.  
+The intent is to allow continuity checking from both the probe microD cables (e.g. before cooldown) 
+and the fridge microD cables (e.g. after loading puck into fridge).
+
+The wiring map assumes a standard QT fridge setup with Sydney flex-PCBs inside the puck 
+connected to a Gen5.0 motherboard and Gen5.0 daughterboard.
+
+It is also assumed that SMU A (from a Keithley 2614B SMU) is connected to the bus of MDAC1 and SMU B is connected to the 
+bus of MDAC2.  In addition, the microD cables should be connected as follows: cable 1 to MDAC1 top 
+microD, cable 2 to MDAC1 bottom microD, cable 3 to MDAC2 top microD, cable 4 to MDAC2 bottom microD.
+'''
+
+import time
+
+#Setup the SMU's in a safe state for checking ESD-sensitive devices
+def setup_smu(SMU):
+    SMU.smua.mode('voltage')
+    SMU.smub.mode('voltage')
+    SMU.smua.limiti(0.00001)
+    SMU.smub.limiti(0.00001)
+    SMU.smua.sourcerange_v(0.2)
+    SMU.smub.sourcerange_v(0.2)
+    SMU.smua.volt(0.01)
+    SMU.smub.volt(0.01)
+    SMU.smua.output('on')
+    SMU.smub.output('on')
+
+#Create mapping between MDAC channels an microD cable lines
 def fridge_BoB_to_mdac(mdac1, mdac2):
     #Names of breakout-box (BoB) channels in format box#-pin#
     mdac1_BoB_list = ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8', '1-9', '1-10', '1-11', '1-12',
@@ -60,6 +98,9 @@ def fridge_BoB_to_mdac(mdac1, mdac2):
     
     return fridge_BoB_to_mdac_dict
 
+
+#Mapping of fridge pin to probe pin.  In other words, for a given PCB bondpad the key represents the line at the 
+#top of the fridge and the corresponding item represents the pin on the probe.
 def fridge_to_probe_map():
     fridge_to_probe = {'3-9': '2-17',
                        '3-21': '2-5',
@@ -160,15 +201,102 @@ def fridge_to_probe_map():
                       }
     return fridge_to_probe
 
+#Setup the MDACs.  First set all channels connected to the microD's to 0V so that the 
+#relays can be switched.  Then ground all the lines internally in the MDAC.
+def setup_mdac2(channel_dict, mdac1, mdac2):
+    for key in channel_dict:
+        channel_dict[key].voltage(0)
+        channel_dict[key].dac_output('open')        
+        
+    for key in channel_dict:
+        channel_dict[key].gnd('close')
+        channel_dict[key].microd('close')
+    
+    mdac1.bus('close')
+    mdac2.bus('close')  
+
+#Run through all 96 lines and check resistance to ground of each line while all other
+#lines are grounded.  This is useful for checking if gates are shorted, if 2-terminal devices
+#are continuous, and if 4-terminal devices at least have continuous bonds on either side of the
+#sample.  Note that for 4-terminal devics you will have to manually check later if there is
+#continuity through the device itself.
+def measure_continuity2(channel_dict, SMU, Navg, probe_connection=False):
+    
+    first = True    
+    for key in channel_dict:
+        if key.startswith('1') or key.startswith('2'):
+            channel_dict[key].bus('close')
+            channel_dict[key].gnd('open')
+
+            r = 0 
+            for i in range(Navg):
+                r += SMU.smua.res()
+                time.sleep(0.01)
+            r = r/Navg #Average the resistance readings
+            
+            if first:
+                R = {key: r}
+                first = False
+            else:
+                R[key] = r       
+            
+            channel_dict[key].gnd('close')
+            channel_dict[key].bus('open')
+        
+        else:
+            channel_dict[key].bus('close')
+            channel_dict[key].gnd('open')
+
+            r = 0 
+            for i in range(Navg):
+                r += SMU.smub.res()
+                time.sleep(0.01)
+            r = r/Navg #Average the resistance readings
+            
+            if first:
+                R = {key: r}
+                first = False
+            else:
+                R[key] = r 
+
+            channel_dict[key].gnd('close')
+            channel_dict[key].bus('open')    
+    
+    #If MDACs are connected via the probe rather than the top of the fridge, R represents the map measured with
+    #the probe pin-out.  Convert this to the top-of-fridge pin-out so the user only has to keep track of one PCB
+    #pin-out map.
+    if probe_connection:
+        fridge_to_probe_dict = fridge_to_probe_map()
+        first = True
+        for fridge_key in fridge_to_probe_dict:
+            if first:
+                final_dict = {fridge_key: R[fridge_to_probe_dict[fridge_key]]}
+                first = False
+            else:
+                final_dict[fridge_key] = R[fridge_to_probe_dict[fridge_key]]
+    else:
+        final_dict = R
+    
+    return final_dict
+
+#Put all the microD lines back to the 'open' configuration.  This means the devices will all
+#be grounded via a 1M resistor in the MDAC (e.g. an ESD-safe state).
+def mdac_cleanup2(channel_dict):
+    for key in channel_dict:
+        channel_dict[key].microd('open')
+        channel_dict[key].gnd('open')
+        channel_dict[key].filter(1)  
 
 
+#Put the whole sequence together
+def continuity_checker(mdac1, mdac2, keithley, probe_connection=False):
+    wire_map = fridge_BoB_to_mdac(mdac1.channels, mdac2.channels)
 
+    t0 = time.time()
+    setup_smu(keithley)
+    setup_mdac2(wire_map, mdac1, mdac2)
+    R_dict = measure_continuity2(wire_map, keithley, 10, probe_connection)
+    mdac_cleanup2(wire_map)
+    print('Total continuity check time = ' + str(time.time() - t0) + 's')
 
-mdac1 = list(range(1,65))
-mdac2 = list(range(65,128))
-
-#print(fridge_BoB_to_mdac(mdac1, mdac2))
-wiring_dict = fridge_BoB_to_mdac(mdac1, mdac2)
-
-print(wiring_dict['3-3'])
-
+    return R_dict
