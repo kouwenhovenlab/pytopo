@@ -215,7 +215,12 @@ class Measure(BaseSweepObject):
         yield self._get_function()
 
 
-class CallSweepObject(BaseSweepObject):
+class _CallSweepObject(BaseSweepObject):
+    """
+    ...
+
+    Note: this feature DOES NOT WORK at the moment.
+    """
     def __init__(self, call_function, *args, **kwargs):
         super().__init__()
         self._caller = lambda: call_function(*args, **kwargs)
