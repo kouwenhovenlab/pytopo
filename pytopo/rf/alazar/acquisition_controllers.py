@@ -73,7 +73,7 @@ class BaseAcqCtl(AcquisitionController):
             return
 
         nsamples = int(nsamples)
-        print(f'Allocating {nsamples} elements ({self.samples2MB(nsamples)} MB)')
+        print(f'Allocating {nsamples} elements ({self.samples2MB(nsamples)} MB, dtype: {self._datadtype})')
         self.data = np.zeros(nsamples, dtype=self._datadtype) 
         
         # this is to circumvent lazy allocation of data
@@ -138,8 +138,6 @@ class BaseAcqCtl(AcquisitionController):
         elif self.average_buffers() and self._nblocks > 1:
             self.data_size *= self._nblocks
 
-        self.data[:self.data_size] = 0
-
         if self.data is None:
             self.allocate_data(self.data_size)
         
@@ -183,9 +181,10 @@ class BaseAcqCtl(AcquisitionController):
         nsamples = int(nsamples_ideal // 128 * 128)
         return max(self.MINSAMPLES, nsamples)
     
-    def pre_start_capture(self):            
+    def pre_start_capture(self):     
         self.handling_times = np.zeros(self.buffers_per_acquisition(), dtype=np.float64)
         self._cur_block_idx = 0
+        self.data[:self.data_size] = 0
     
     def pre_acquire(self):
         if self.pre_acquire_func:

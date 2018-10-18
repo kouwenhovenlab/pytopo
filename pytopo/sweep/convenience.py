@@ -2,17 +2,17 @@ import time
 
 from qcodes import Parameter
 
-from pytopo.sweep.base import Sweep, Measure, Zip, CallSweepObject, Nest, Chain
+from pytopo.sweep.base import Sweep, Measure, Zip, _CallSweepObject, Nest, Chain
 
 from pytopo.sweep.decorators import (
     parameter_setter, parameter_getter, MeasureFunction, SweepFunction
 )
 
 
-def sweep(fun_or_param, set_points):
+def sweep(fun_or_param, set_points, paramtype: str = None):
 
     if isinstance(fun_or_param, Parameter):
-        fun = parameter_setter(fun_or_param)
+        fun = parameter_setter(fun_or_param, paramtype=paramtype)
     elif isinstance(fun_or_param, SweepFunction):
         fun = fun_or_param
     else:
@@ -27,10 +27,10 @@ def sweep(fun_or_param, set_points):
     return sweep_object
 
 
-def measure(fun_or_param):
+def measure(fun_or_param, paramtype: str = None):
 
     if isinstance(fun_or_param, Parameter):
-        fun = parameter_getter(fun_or_param)
+        fun = parameter_getter(fun_or_param, paramtype=paramtype)
     elif isinstance(fun_or_param, MeasureFunction):
         fun = fun_or_param
     else:
@@ -71,8 +71,14 @@ def szip(*sweep_objects):
     return Zip(*sweep_objects)
 
 
-def call(call_function, *args, **kwargs):
-    return CallSweepObject(call_function, *args, **kwargs)
+# this does not work at the moment, see tests
+def _call(call_function, *args, **kwargs):
+    """
+    ...
+
+    Note: this feature DOES NOT WORK at the moment.
+    """
+    return _CallSweepObject(call_function, *args, **kwargs)
 
 
 def nest(*sweep_objects):

@@ -200,6 +200,83 @@ class RawAcqCtl(BaseAcqCtl):
         return (data.astype(np.float32) / (2**self._nbits)) - 0.5
 
 
+class DemodCtl(BaseAcqCtl):
+    """
+    A controller that demodulates the data from the Alazar.
+    Returns buffers x records x demod_samples x channels.
+    """
+
+    def __init__(self, *arg, **kw):
+        super().__init__(*arg, **kw)
+        self.add_parameter('demod_frq', set_cmd=None, unit='Hz')
+
+    def data_shape(self):
+        """
+        Shape of the data that this controller will produce
+
+        Returns:
+            A tuple of the sizes of the data dimensions.
+        """
+        self.period = int(self.sample_rate() / self.demod_frq() + 0.5)
+        self.demod_samples = self.samples_per_record() // self.period
+        self.demod_tvals = self.tvals[::self.period][:self.demod_samples]
+        self.cosarr = (np.cos(2*np.pi*self.demod_frq()*self.tvals).reshape(1,1,-1,1))
+        self.sinarr = (np.sin(2*np.pi*self.demod_frq()*self.tvals).reshape(1,1,-1,1))
+
+        shp = (
+            self.buffers_per_acquisition(), 
+            self.records_per_buffer(), 
+            self.demod_samples,
+            self.number_of_channels
+            )
+
+        return shp
+
+    def pre_start_capture(self):
+        super().pre_start_capture()
+        shp = (
+            self.buffers_per_acquisition(), 
+            self.records_per_buffer(), 
+            self.samples_per_record(),
+            self.number_of_channels
+        )
+        self.data = np.zeros(shp, dtype=self._datadtype)
+
+    
+    def data_dims(self):
+        """
+        Dimensions of the data produced
+
+        Returns:
+             A tuple of the names of dimensions of the data returned
+        """
+        dims = ('buffers', 'records', 'IF_periods', 'channels')
+        return dims
+
+    
+    def process_buffer(self, buf):
+        """
+        Return data as is without any averaging.
+        """
+        return buf
+
+    def post_acquire(self):
+        data = super().post_acquire()
+        if self._nbits == 12:
+            data = np.right_shift(data, 4)
+        data = (data.astype(np.float32) / (2**self._nbits)) - 0.5
+
+        real = (data * 2 * self.cosarr)[:,:,:self.demod_samples*self.period,:].reshape(
+            self.buffers_per_acquisition(), -1, 
+            self.demod_samples, self.period, self.number_of_channels).mean(axis=-2)
+        imag = (data * 2 * self.sinarr)[:,:,:self.demod_samples*self.period,:].reshape(
+            self.buffers_per_acquisition(), -1, 
+            self.demod_samples, self.period, self.number_of_channels).mean(axis=-2)
+        
+        return real + 1j * imag
+
+
+
 class AvgBufCtl(BaseAcqCtl):
     """
     A controller that averages over buffers. The data returned has the shape
@@ -493,6 +570,11 @@ class AvgRecIQCtl(AvgRecDemodCtl):
         Average data from super method over all periods.
         """
         return super().post_acquire().mean(axis=1)
+
+
+
+
+
 """
 ####
 #### OLDER, CURRENTLY NOT WORKING CONTROLLERS. NEEDS TO BE FIXED.
