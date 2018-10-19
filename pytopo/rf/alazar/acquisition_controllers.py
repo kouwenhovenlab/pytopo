@@ -81,7 +81,9 @@ class BaseAcqCtl(AcquisitionController):
         return True
 
     def setup_acquisition(self, samples, records, buffers, 
-                          allocated_buffers=None, acq_time=None, SR=None):
+                          allocated_buffers=None, acq_time=None, SR=None,
+                          verbose=True):
+
         alazar = self._alazar
         
         if SR is None:
@@ -114,12 +116,13 @@ class BaseAcqCtl(AcquisitionController):
         mbpa = mbpb * buffers
         mbpalloc = nalloc * mbpb
                 
-        print(f'Setup capture: {mbpa} MB total')
-        print(f' * Buffers: {buffers} ({mbpb} MB/buffer) '
-              f'| (Allocated buffers: {nalloc} = {mbpalloc} MB)')
-        print(f' * Records: {records} ({mbpr} MB/record)') 
-        print(f' * Samples: {n_samples_per_record} (= {n_samples_per_record/SR * 1e6} us)')
-        print(f' * Channels:', self.number_of_channels)
+        if verbose:
+            print(f'Setup capture: {mbpa} MB total')
+            print(f' * Buffers: {buffers} ({mbpb} MB/buffer) '
+                f'| (Allocated buffers: {nalloc} = {mbpalloc} MB)')
+            print(f' * Records: {records} ({mbpr} MB/record)') 
+            print(f' * Samples: {n_samples_per_record} (= {n_samples_per_record/SR * 1e6} us)')
+            print(f' * Channels:', self.number_of_channels)
         
         if self._buffer_order == 'brsc':
             self.buffer_shape = (self.records_per_buffer(),
