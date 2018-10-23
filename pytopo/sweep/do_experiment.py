@@ -4,8 +4,7 @@ from warnings import warn
 import qcodes
 from qcodes.dataset.data_export import get_data_by_id
 from qcodes.dataset.plotting import plot_by_id
-from qcodes.dataset.experiment_container import load_experiment_by_name, \
-    new_experiment
+from qcodes.dataset.experiment_container import load_or_create_experiment
 from qcodes.dataset.data_set import DataSet
 
 from pytopo.sweep.measurement import SweepMeasurement
@@ -55,12 +54,7 @@ def do_experiment(
     else:
         sample_name = None
 
-    try:
-        experiment = load_experiment_by_name(experiment_name, sample_name)
-    except ValueError:  # experiment does not exist yet
-        db_location = qcodes.config["core"]["db_location"]
-        DataSet(db_location)
-        experiment = new_experiment(experiment_name, sample_name)
+    experiment = load_or_create_experiment(experiment_name, sample_name)
 
     def add_actions(action, callables):
         if callables is None:
