@@ -1,3 +1,5 @@
+import time
+
 from qcodes.instrument_drivers.tektronix.AWG5014 import Tektronix_AWG5014
 from qcodes.instrument_drivers.tektronix.AWG5208 import AWG5208
 

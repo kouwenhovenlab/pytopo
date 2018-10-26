@@ -107,6 +107,11 @@ class TriggerSequence(BroadBeanSequence):
             else:
                 print('ro_trigger not defined. omitting.')
 
+            for k, v in bps.map.items():
+                if '_trigger' in k and k not in ['ats_trigger', 'ro_trigger']:
+                    t0, t1 = pre_trig_time + trig_time, low_time
+                    bps[k] = [(t0, t1)]
+
             elements.append(bbtools.blueprints2element(bps))
         
         return bbtools.elements2sequence(elements, self.name)
