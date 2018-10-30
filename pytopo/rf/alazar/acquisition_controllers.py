@@ -1,6 +1,38 @@
 import time
 import numpy as np
+import numba as nb
 from qcodes.instrument_drivers.AlazarTech.ATS import AcquisitionController
+
+## UTILITY FUNCTIONS ##
+
+def rescale(out, data, n_bits, scale0, scale1):
+    np.require(out, requirements=['C', 'W'])
+    np.require(data, requirements=['C'])
+    _rescale(out.ravel(), data.ravel(), n_bits, scale0, scale1)
+
+@nb.jit(nb.void(nb.float32[:], nb.uint16[:], nb.int64, nb.float32, nb.float32), nopython=True, cache=True)
+def _rescale(out, data, n_bits, scale0, scale1):
+    shift_by = 16 - n_bits
+    two_by_n = 1 / (2.0 ** (n_bits - 1))
+    prefactor0 = scale0 * two_by_n
+    prefactor1 = scale1 * two_by_n
+    # Rely on Numba JITing loops.
+    for idx_datum in range(len(data)):
+        if idx_datum % 2 == 0:
+            scaled = prefactor0 * nb.float32(np.right_shift(data[idx_datum], shift_by)) - scale0
+        else:
+            scaled = prefactor1 * nb.float32(np.right_shift(data[idx_datum], shift_by)) - scale1
+        out[idx_datum] = scaled
+
+# @nb.vectorize([
+#     nb.float32(nb.uint16, nb.int64, nb.float32)
+# ])
+# def rescale(data, n_bits, scale):
+#     shift_by = 16 - n_bits
+#     prefactor = scale / (2.0 ** (n_bits - 1))
+#     return nb.float32(np.right_shift(data, shift_by)) - scale
+
+## CLASSES ##
 
 class BaseAcqCtl(AcquisitionController):
     """
@@ -282,18 +314,32 @@ class RawAcqCtl(BaseAcqCtl):
         data = super().post_acquire()
         
         alz = self._alazar
-        rng = np.array([alz.channel_range1(), alz.channel_range2()])
-        rng = rng.reshape((len(data.shape)-1)*(1,) + (2,))
+        rng = np.array([alz.channel_range1(), alz.channel_range2()]).astype(np.float32)
+        # rng = rng.reshape((len(data.shape)-1)*(1,) + (2,))
+        float_data = np.empty_like(data, dtype=np.float32)
+
+        # View 
+        rescale(float_data, data, self._nbits, rng[0], rng[1])
         
-        if self._nbits == 12:
-            data = np.right_shift(data, 4)
-        data = ((data.astype(np.float32) / (2**self._nbits)) - 0.5) * 2 * rng
+        # for idx_rng in range(2):
+        #     import pdb; pdb.set_trace()
+        #     rescale(float_data[..., idx_rng], data[..., idx_rng], self._nbits, rng[idx_rng])
+        
+        # if self._nbits == 12:
+        #     data = np.right_shift(data, 4, out=data)
+        
+        # scale = 2 ** (self._nbits - 1) * rng
+        # Ideally, this should be the only copy.
+        # float_data = data.astype(np.float32)
+        # float_data *= scale
+        # float_data -= rng
+        # data = ((data.astype(np.float32) / (2**self._nbits)) - 0.5) * 2 * rng
         if self.average_buffers():
-            data /= self.buffers_per_acquisition()
-            data *= self._nblocks
+            float_data /= self.buffers_per_acquisition()
+            float_data *= self._nblocks
 
         self.post_acquire_time = time.perf_counter() - t0
-        return data
+        return float_data
 
 
 class PostDemodCtl(BaseAcqCtl):
