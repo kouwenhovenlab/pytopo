@@ -1,6 +1,8 @@
 import time
 import numpy as np
 import numba as nb
+import asyncio
+from typing import Iterable, Awaitable, Any
 from qcodes.instrument_drivers.AlazarTech.ATS import AcquisitionController
 
 ## UTILITY FUNCTIONS ##
@@ -253,13 +255,28 @@ class BaseAcqCtl(AcquisitionController):
             self.post_acquire_func()
             
         return self.data[:self.data_size].reshape(self.data_shape())
+
+    def start_background_acquisition_tasks(self) -> Iterable[Awaitable[None]]:
+        return []
         
-    def do_acquisition(self):
+    async def _acquire(self):
         if self._alazar is not None:
-            value = self._alazar.acquire(acquisition_controller=self)
+            value = await self._alazar.async_acquire(acquisition_controller=self)
         else:
             value = None
         return value
+
+    async def async_do_acquisition(self) -> Awaitable[np.ndarray]:
+        results = await asyncio.gather(
+            self._acquire(),
+            *self.start_background_acquisition_tasks()
+        )
+        return results[0]
+
+    def do_acquisition(self) -> np.ndarray:
+        loop : asyncio.BaseEventLoop = asyncio.get_event_loop()
+        return loop.run_until_complete(self.async_do_acquisition())
+
 
     
 class TestCtl(BaseAcqCtl):
