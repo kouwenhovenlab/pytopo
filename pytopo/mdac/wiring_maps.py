@@ -1,3 +1,5 @@
+#Create mapping between MDAC channels and microD cable lines.  In other words, the key represents the line at the top of the fridge 
+#and the value represents the corresponding MDAC channel.
 def fridge_BoB_to_mdac(mdac1, mdac2):
     #Names of breakout-box (BoB) channels in format box#-pin#
     mdac1_BoB_list = ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8', '1-9', '1-10', '1-11', '1-12',
@@ -60,6 +62,8 @@ def fridge_BoB_to_mdac(mdac1, mdac2):
     
     return fridge_BoB_to_mdac_dict
 
+#Mapping of fridge pin to probe pin.  In other words, for a given PCB bondpad the key represents the line at the 
+#top of the fridge and the corresponding item represents the pin on the probe.
 def fridge_to_probe_map():
     fridge_to_probe = {'3-9': '2-17',
                        '3-21': '2-5',
@@ -162,7 +166,14 @@ def fridge_to_probe_map():
 
 
 
-
+def channel_mapper(fridge_pin, mdac1, mdac2, probe_connection=False):    
+    # fridge_to_probe_dict = fridge_to_probe_map()
+    
+    if not(probe_connection):
+        channel = fridge_BoB_to_mdac(mdac1, mdac2)[fridge_pin]
+    else:
+        channel = fridge_BoB_to_mdac(mdac1, mdac2)[fridge_to_probe_map()[fridge_pin]]
+    return channel
 
 mdac1 = list(range(1,65))
 mdac2 = list(range(65,128))
