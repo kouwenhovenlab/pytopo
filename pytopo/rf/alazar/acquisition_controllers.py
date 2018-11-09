@@ -12,7 +12,7 @@ def rescale(out, data, n_bits, scale0, scale1):
     np.require(data, requirements=['C'])
     _rescale(out.ravel(), data.ravel(), n_bits, scale0, scale1)
 
-@nb.jit(nb.void(nb.float32[:], nb.uint16[:], nb.int64, nb.float32, nb.float32), nopython=True, cache=True)
+@nb.jit(nb.void(nb.float32[:], nb.uint16[:], nb.int64, nb.float32, nb.float32), nopython=True, nogil=True, cache=True)
 def _rescale(out, data, n_bits, scale0, scale1):
     shift_by = 16 - n_bits
     two_by_n = 1 / (2.0 ** (n_bits - 1))
