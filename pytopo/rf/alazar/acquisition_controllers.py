@@ -274,7 +274,7 @@ class BaseAcqCtl(AcquisitionController):
         return results[0]
 
     def do_acquisition(self) -> np.ndarray:
-        loop : asyncio.BaseEventLoop = asyncio.get_event_loop()
+        loop : asyncio.AbstractEventLoop = asyncio.get_event_loop()
         return loop.run_until_complete(self.async_do_acquisition())
 
 
