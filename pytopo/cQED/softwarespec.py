@@ -1,5 +1,7 @@
 import qcodes
 import numpy as np
+import time
+from lmfit.models import LorentzianModel
 
 from pytopo.awg_sequencing import broadbean as bbtools
 from pytopo.awg_sequencing import awg_tools
@@ -92,7 +94,9 @@ class SoftSweepCtl(acquisition_controllers.PostIQCtl):
         self._perform_step(nextstep)
         
 
-def setup_soft_sweep(values, param, time_bin=0.2e-3, integration_time=10e-3, setup_awg=True, ctl=None):
+def setup_soft_sweep(values, param, time_bin=0.2e-3, integration_time=10e-3, 
+                     post_integration_delay=10e-6, setup_awg=True, ctl=None):
+    
     awg = qcodes.Station.default.awg
     if ctl is None:
         ctl = qcodes.Station.default.softsweep_ctl
@@ -110,7 +114,7 @@ def setup_soft_sweep(values, param, time_bin=0.2e-3, integration_time=10e-3, set
     ctl.buffers_per_block(navgs)
     ctl.average_buffers(True)
     
-    ctl.setup_acquisition(samples=int((time_bin-10e-6) * alazar.sample_rate() // 128 * 128),
+    ctl.setup_acquisition(samples=int((time_bin-post_integration_delay) * alazar.sample_rate() // 128 * 128),
                           records=1,
                           buffers=len(values)*navgs, verbose=False,
                           allocated_buffers=max(2, len(values)-1))
@@ -205,3 +209,45 @@ def get_single_averaged_IQpoint_chanA():
     
     return mag, phase
     
+
+### Qubit spectroscopy (two-tone) ###
+
+def fit_lorentzian(x,y):
+    mod = LorentzianModel()
+
+    pars = mod.guess(y, x=x)
+    out = mod.fit(y, pars, x=x)
+    return out
+
+def get_resonator_spec_and_fit(frequencies):
+    mag, phase = get_soft_sweep_trace()
+    out = fit_lorentzian(frequencies, mag**2)
+    return mag, phase, out
+
+@hardsweep(
+    ind=[('frequency', 'Hz', 'array')], 
+    dep=[('signal_magnitude', 'V', 'array'), ('signal_phase', 'deg', 'array'), ('peak_frq', 'Hz', 'array')]
+)
+def measure_qubit_spec_optimize_resonator(resonator_frequencies, resonator_src, 
+                                          qubit_frequencies, qubit_src, integration_time=10e-3,
+                                          *arg, **kw):
+    """
+    Takes a resonator spec trace (using software spec), fits a lorentzian line shape,
+    then sets the heterodyne source to the peak frequency, then measures
+    qubit soft-spec.
+    """    
+    ctl = setup_soft_sweep(resonator_frequencies, resonator_src.frequency, 
+                           integration_time=integration_time, setup_awg=False, **kw)
+    
+    _, _, fitout = get_resonator_spec_and_fit(resonator_frequencies)
+    peak_frequency = fitout.best_values['center']
+    resonator_src.frequency(peak_frequency)
+    print(f'Found resonator peak frequency: {peak_frequency:1.5e}')
+    
+    ctl = setup_soft_sweep(qubit_frequencies, qubit_src.frequency, 
+                           integration_time=integration_time, setup_awg=False, **kw)    
+    mag, phase = get_soft_sweep_trace(ctl)
+       
+    
+    return (qubit_frequencies.reshape(-1), 
+            np.vstack((mag.reshape(-1), phase.reshape(-1), np.ones(qubit_frequencies.size) * peak_frequency)))

@@ -43,22 +43,22 @@ class FieldOptimizationProblem(object):
             field.
         objective: A gettable QCoDeS parameter that returns
             estimates of the value to be optimized.
-        objective_uncertianty: A gettable QCoDeS parameter that returns
-            estimates of the uncertianty in estimates of the
+        objective_uncertainty: A gettable QCoDeS parameter that returns
+            estimates of the uncertainty in estimates of the
             objective.
     """
 
     instrument : ControlsField
     objective : GettableParameter[float]
-    objective_uncertianty : Optional[GettableParameter[float]]
+    objective_uncertainty : Optional[GettableParameter[float]]
 
     def __init__(self,
                  instrument : ControlsField,
                  objective : GettableParameter[float],
-                 objective_uncertianty : Optional[GettableParameter[float]]):
+                 objective_uncertainty : Optional[GettableParameter[float]]):
         self.instrument = instrument
         self.objective = objective
-        self.objective_uncertianty = objective_uncertianty
+        self.objective_uncertainty = objective_uncertainty
 
     
     def set_field(self,
@@ -67,7 +67,8 @@ class FieldOptimizationProblem(object):
                   absolute : bool = True,
                   ramp_rate : float = 1e-3,
                   observer_fn : Optional[Callable[[FieldVector], None]] = None,
-                  verbose : bool = False
+                  verbose : bool = False,
+                  threshold : float = 1e-6
                  ) -> None:
         """
         Sets the field controlled by this problem's instrument to a
@@ -85,6 +86,9 @@ class FieldOptimizationProblem(object):
             ramp_rate: A rate at which the field can be safely swept between
                 points.
             observer_fn: A callable which gets called after each small step.
+            threshold: If the norm of the difference between the current and
+                target field is smaller than this value, no further steps
+                will be taken.
         """
         if IPYTHON and ipw is not None:
             status = ipw.Label()
@@ -112,6 +116,10 @@ class FieldOptimizationProblem(object):
             for step_amount in np.linspace(0, 1, n_steps + 1)[1:]:
                 current = self.instrument.field_measured()
                 intermediate_target = step_amount * (target - current) + current
+
+                if (intermediate_target - current).norm() <= threshold:
+                    print("Step threshold met, stopping move early.")
+                    break
                 
                 if verbose:
                     print(f"Setting field target to {intermediate_target.repr_spherical()}")
@@ -132,6 +140,7 @@ class FieldOptimizationProblem(object):
                                     phi_range : Interval[float], n_phi : int,
                                     theta_range : Interval[float], n_theta : int,
                                     return_extra : bool = False,
+                                    n_steps : int = 5,
                                     plot : bool = False,
                                     verbose : bool = False,
                                     ramp_rate : float = 1.5e-3
@@ -182,7 +191,7 @@ class FieldOptimizationProblem(object):
             print(f"Evaluating at phi = {nearest.phi}, theta = {nearest.theta}")
             self.set_field(
                 nearest,
-                absolute=True, n_steps=5, ramp_rate=ramp_rate,
+                absolute=True, n_steps=n_steps, ramp_rate=ramp_rate,
                 observer_fn=observe,
                 verbose=verbose
             )
@@ -229,8 +238,10 @@ class FieldOptimizationProblem(object):
                                     initial_phi : float, phi_window : float, n_phis : int,
                                     initial_theta : float, theta_window : float, n_thetas : int,
                                     reoptimization_threshold : float = 0.5,
+                                    n_steps : int = 5,
                                     ramp_rate : float = 1e-3,
-                                    return_extra : bool = False
+                                    return_extra : bool = False,
+                                    verbose : bool = False
                                    ) -> OptionalExtra[FieldVector]:
         """
         Ramps the magnitude of a magnetic field from a given start point,
@@ -260,7 +271,7 @@ class FieldOptimizationProblem(object):
                 at each field magnitude.
             reoptimization_threshold: If an increment in field magnitude
                 changes the objective by more than this threshold, as
-                scaled by the uncertianty, then an exhaustive search
+                scaled by the uncertainty, then an exhaustive search
                 will be performed after incrementing. This is useful to
                 avoid situations in which an objective value has changed
                 by less than a "line width."
@@ -282,7 +293,7 @@ class FieldOptimizationProblem(object):
         
         # Find the FWHM, so that we can compare line widths.
         prev_objective = None
-        prev_uncertianty = None
+        prev_uncertainty = None
 
         objective_history = []
         optima_history = []
@@ -290,19 +301,25 @@ class FieldOptimizationProblem(object):
         for r in rs:
             print(f"Optimizing at |B| = {r}...")
             current = self.instrument.field_measured()
+            self.set_field(
+                FieldVector(r=r, theta=current.theta, phi=current.phi),
+                absolute=True,
+                n_steps=n_steps, ramp_rate=ramp_rate,
+                verbose=verbose
+            )
             
             current_objective = self.objective()
-            current_uncertianty = self.objective_uncertianty()
+            current_uncertainty = self.objective_uncertainty()
 
             objective_history.append(current_objective)
 
             # Check if we can skip this iteration.
             # We force optimization at the final iteration.
-            if self.objective_uncertianty is not None and r != rs[-1] and prev_objective is not None:
-                scaled_distance = np.abs(current_objective - prev_objective) / np.mean([prev_uncertianty, current_uncertianty])
+            if self.objective_uncertainty is not None and r != rs[-1] and prev_objective is not None:
+                scaled_distance = np.abs(current_objective - prev_objective) / np.mean([prev_uncertainty, current_uncertainty])
                 if scaled_distance < reoptimization_threshold:
                     prev_objective = current_objective
-                    prev_uncertianty = current_uncertianty
+                    prev_uncertainty = current_uncertainty
                     print(f"Within {reoptimization_threshold} line widths, not re-optimizing yet.")
                     continue
                 else:
@@ -312,15 +329,15 @@ class FieldOptimizationProblem(object):
                 r,
                 (current.phi - phi_window / 2, current.phi + phi_window / 2), n_phis,
                 (current.theta - theta_window / 2, current.theta + theta_window / 2), n_thetas,
-                ramp_rate=ramp_rate
+                ramp_rate=ramp_rate,n_steps=n_steps, verbose=verbose
             )
             optima_history.append(current_best)
 
             # Find the FWHM at the point optimized by align_at, and save
             # to "prev" so that it's ready for the next iteration.
-            if self.objective_uncertianty is not None:
+            if self.objective_uncertainty is not None:
                 prev_objective = current_objective
-                prev_uncertianty = current_uncertianty
+                prev_uncertainty = current_uncertainty
 
         
         if return_extra:
