@@ -80,7 +80,7 @@ class FieldOptimizationProblem(object):
             ramp_rate=ramp_rate,
             observer_fn=observer_fn,
             verbose=verbose,
-            threshold : float = 1e-6
+            threshold=threshold,
         )
         return sync(task)
 
