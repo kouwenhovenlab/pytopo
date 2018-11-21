@@ -172,6 +172,5 @@ class TransformedController(ControlsField, Transformable):
         # DON'T TRANSFORM THE RAMP RATE
         self.field_ramp_rate = underlying_controller.field_ramp_rate
         self.ramp = underlying_controller.ramp
-        self.ramp_async = underlying_controller.ramp_async
 
 _TransformedFieldParameter.__name__ = _TransformedFieldParameter.__name__[1:]
