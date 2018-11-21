@@ -245,7 +245,7 @@ def measure_qubit_spec_optimize_resonator(resonator_frequencies, resonator_src,
     print(f'Found resonator peak frequency: {peak_frequency:1.5e}')
     
     ctl = setup_soft_sweep(qubit_frequencies, qubit_src.frequency, 
-                           integration_time=integration_time, setup_awg=False, **kw)    
+                           integration_time=integration_time, setup_awg=True, **kw)    
     mag, phase = get_soft_sweep_trace(ctl)
        
     
