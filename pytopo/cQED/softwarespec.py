@@ -72,7 +72,7 @@ class SoftSweepCtl(acquisition_controllers.PostIQCtl):
             else:
                 print('Done!', end='\r')
             
-            awg_tools.trigger_awg_when_ready(awg)
+            # awg_tools.trigger_awg_when_ready(awg)
         
     def pre_acquire(self):
         """
@@ -84,7 +84,12 @@ class SoftSweepCtl(acquisition_controllers.PostIQCtl):
         self._settle()
         
         self._step = 0        
-        qcodes.Station.default.awg.force_trigger()
+        # qcodes.Station.default.awg.force_trigger()
+        
+        awg = qcodes.Station.default.awg
+        # awg_tools.trigger_awg_when_ready(awg)
+        awg.start()
+    
     
     def buffer_done_callback(self, buffernum):
         """
@@ -95,7 +100,8 @@ class SoftSweepCtl(acquisition_controllers.PostIQCtl):
         
 
 def setup_soft_sweep(values, param, time_bin=0.2e-3, integration_time=10e-3, 
-                     post_integration_delay=10e-6, setup_awg=True, ctl=None):
+                     post_integration_delay=10e-6, setup_awg=True, ctl=None,
+                     waiting_time_per_value=0):
     
     awg = qcodes.Station.default.awg
     if ctl is None:
@@ -106,8 +112,9 @@ def setup_soft_sweep(values, param, time_bin=0.2e-3, integration_time=10e-3,
     
     if setup_awg:
         trig_seq = TriggerSequence(awg, SR=1e7)
-        trig_seq.wait = 'first'
-        trig_seq.setup_awg(cycle_time=time_bin, debug_signal=False, ncycles=navgs, plot=False)
+        trig_seq.wait = 'off'
+        trig_seq.setup_awg(cycle_time=time_bin, debug_signal=False, ncycles=navgs, plot=False,
+                           final_waiting_time=waiting_time_per_value, start_awg=False)
     
     ctl.param = param
     ctl.values = values
