@@ -81,7 +81,7 @@ class TriggerSequence(BroadBeanSequence):
 
     def sequence(self, trig_time=1e-6, cycle_time=10e-6,
                  pre_trig_time=1e-6, ncycles=1, debug_signal=False,
-                 ro_trigger_always_on=False):
+                 ro_trigger_always_on=False, final_waiting_time=0):
 
         end_buffer = 1e-6
         low_time = cycle_time - trig_time - pre_trig_time - end_buffer
@@ -112,6 +112,11 @@ class TriggerSequence(BroadBeanSequence):
                     t0, t1 = pre_trig_time + trig_time, low_time
                     bps[k] = [(t0, t1)]
 
+            elements.append(bbtools.blueprints2element(bps))
+
+        if final_waiting_time > 0:
+            bps = bbtools.BluePrints(chan_map=self.chan_map, length=final_waiting_time, sample_rate=self.SR)
+            bps['pulse'].insertSegment(0, ramp, (0, 0), dur=final_waiting_time)
             elements.append(bbtools.blueprints2element(bps))
         
         return bbtools.elements2sequence(elements, self.name)
