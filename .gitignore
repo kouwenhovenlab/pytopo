@@ -7,3 +7,5 @@ labpythonconfig.py
 *.png
 *.pdf
 pytopo.egg-info
+.idea
+__pycache__/

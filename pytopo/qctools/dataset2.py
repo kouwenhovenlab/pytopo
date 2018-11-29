@@ -3,17 +3,12 @@ convenient.
 
 Maintainer: Wolfgang Pfaff <wolfgangpfff@gmail.com>
 """
-import numpy as np
 import time
 import qcodes as qc
 from qcodes.dataset.data_set import DataSet
 from qcodes.dataset.experiment_container import load_experiment_by_name, \
     new_experiment
 from qcodes.dataset.sqlite_base import transaction, one
-from qcodes.dataset.data_export import get_data_by_id
-from qcodes.dataset.plotting import plot_by_id
-
-from pytopo.sweep import SweepMeasurement
 
 
 def select_experiment(exp_name, sample_name):

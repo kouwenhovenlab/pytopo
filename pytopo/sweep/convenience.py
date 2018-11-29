@@ -2,33 +2,42 @@ import time
 
 from qcodes import Parameter
 
-from pytopo.sweep.base import Sweep, Measure, Zip, CallSweepObject, Nest, Chain
-from pytopo.sweep.decorators import parameter_setter, parameter_getter
+from pytopo.sweep.base import Sweep, Measure, Zip, _CallSweepObject, Nest, Chain
+
+from pytopo.sweep.decorators import (
+    parameter_setter, parameter_getter, MeasureFunction, SweepFunction
+)
 
 
-def sweep(fun_or_param, set_points):
+def sweep(fun_or_param, set_points, paramtype: str = None):
 
     if isinstance(fun_or_param, Parameter):
-        fun = parameter_setter(fun_or_param)
-    else:
+        fun = parameter_setter(fun_or_param, paramtype=paramtype)
+    elif isinstance(fun_or_param, SweepFunction):
         fun = fun_or_param
+    else:
+        raise ValueError("Can only sweep a QCoDeS parameter or a function "
+                         "decorated with pytopo.setter")
 
     if not callable(set_points):
-        sweep_object = Sweep(fun, lambda: set_points)
+        sweep_object = Sweep(fun, fun.parameter_table, lambda: set_points)
     else:
-        sweep_object = Sweep(fun, set_points)
+        sweep_object = Sweep(fun, fun.parameter_table, set_points)
 
     return sweep_object
 
 
-def measure(fun_or_param):
+def measure(fun_or_param, paramtype: str = None):
 
     if isinstance(fun_or_param, Parameter):
-        fun = parameter_getter(fun_or_param)
-    else:
+        fun = parameter_getter(fun_or_param, paramtype=paramtype)
+    elif isinstance(fun_or_param, MeasureFunction):
         fun = fun_or_param
+    else:
+        raise ValueError("Can only measure a QCoDeS parameter or a function "
+                         "decorated with pytopo.getter")
 
-    return Measure(fun)
+    return Measure(fun, fun.parameter_table)
 
 
 def time_trace(interval_time, total_time=None, stop_condition=None):
@@ -62,8 +71,14 @@ def szip(*sweep_objects):
     return Zip(*sweep_objects)
 
 
-def call(call_function, *args, **kwargs):
-    return CallSweepObject(call_function, *args, **kwargs)
+# this does not work at the moment, see tests
+def _call(call_function, *args, **kwargs):
+    """
+    ...
+
+    Note: this feature DOES NOT WORK at the moment.
+    """
+    return _CallSweepObject(call_function, *args, **kwargs)
 
 
 def nest(*sweep_objects):

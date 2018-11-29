@@ -122,9 +122,8 @@ class Nest(BaseSweepObject):
         def inner():
             for result2 in sweep_object2:
                 for result1 in sweep_object1:
-                    if result1 is not None:
-                        result1.update(result2)
-                        yield result1
+                    result1.update(result2)
+                    yield result1
 
         return IteratorSweep(inner)
 
@@ -183,15 +182,13 @@ class Sweep(BaseSweepObject):
     """
 
     def __init__(
-            self, set_function: Callable, point_function: Callable) ->None:
-
-        if not hasattr(set_function, "getter_setter_decorated"):
-            raise ValueError("Set function should be decorated with "
-                             "pytopo.sweep.setter")
+            self, set_function: Callable, parameter_table: ParamTable,
+            point_function: Callable) ->None:
 
         super().__init__()
         self._point_function = point_function
-        self._set_function, self._parameter_table = set_function()
+        self._set_function = set_function
+        self._parameter_table = parameter_table.copy()
 
     def _generator_factory(self)->Iterator:
         for set_value in self._point_function():
@@ -205,27 +202,30 @@ class Measure(BaseSweepObject):
     ParameterWrapper are measurable
     """
 
-    def __init__(self, get_function: Callable)->None:
-
-        if not hasattr(get_function, "getter_setter_decorated"):
-            raise ValueError("get function should be decorated with "
-                             "pytopo.sweep.getter")
+    def __init__(self, get_function: Callable,
+                 parameter_table: param_table)->None:
 
         super().__init__()
 
-        self._get_function, self._parameter_table = get_function()
+        self._get_function = get_function
+        self._parameter_table = parameter_table.copy()
         self._measurable = True
 
     def _generator_factory(self)->Iterator:
         yield self._get_function()
 
 
-class CallSweepObject(BaseSweepObject):
+class _CallSweepObject(BaseSweepObject):
+    """
+    ...
+
+    Note: this feature DOES NOT WORK at the moment.
+    """
     def __init__(self, call_function, *args, **kwargs):
         super().__init__()
         self._caller = lambda: call_function(*args, **kwargs)
-        self._parameter_table = ParamTable([])
+        self._parameter_table = ParamTable([], nests=[[]])
 
     def _generator_factory(self):
         self._caller()
-        yield
+        yield {}
