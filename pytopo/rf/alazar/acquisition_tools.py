@@ -2,6 +2,7 @@ import logging
 import time
 import numpy as np
 import qcodes as qc
+import qcodes.instrument_drivers
 from qcodes.utils.helpers import LogCapture
 from qcodes.instrument.parameter import Parameter
 from qcodes.dataset.measurements import Measurement
