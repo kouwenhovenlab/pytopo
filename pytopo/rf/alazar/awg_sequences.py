@@ -128,7 +128,11 @@ class QPTriggerSequence(BroadBeanSequence):
     def sequence(self, trig_time=1e-6, cycle_time=5e-3,
                  pre_trig_time=1e-6, use_event_seq=False):
         elements = []
-
+        if use_event_seq:
+            bps = bbtools.BluePrints(chan_map=self.chan_map, length=cycle_time, sample_rate=self.SR)
+            bps['pulse'].insertSegment(0, ramp, (0, 0), dur=cycle_time)
+            
+            elements.append(bbtools.blueprints2element(bps))
         # readout sequence
         end_buffer = 1e-6
         low_time = cycle_time - trig_time - pre_trig_time - end_buffer
@@ -150,21 +154,17 @@ class QPTriggerSequence(BroadBeanSequence):
         elements.append(bbtools.blueprints2element(bps))
 
         # Adding event seq
-        if use_event_seq:
-            bps = bbtools.BluePrints(chan_map=self.chan_map, length=cycle_time, sample_rate=self.SR)
-            bps['pulse'].insertSegment(0, ramp, (0, 0), dur=cycle_time)
-            
-            elements.append(bbtools.blueprints2element(bps))
+        
         
         return bbtools.elements2sequence(elements, self.name)
 
 
-    def load_sequence(self, **kwargs):
+    def load_sequence(self, ncycles=1, **kwargs):
         self.setup_awg(**kwargs)
 		
-		use_event_seq = kwargs.get('use_event_seq', False)
-		
+        use_event_seq = kwargs.get('use_event_seq', False)
+
         if use_event_seq:
-            self.awg.set_sqel_event_jump_type(2, 'INDEX')
-            self.awg.set_sqel_event_target_index(2, 1)
-            self.awg.set_sqel_loopcnt_to_inf(2)
+            #self.awg.set_sqel_event_jump_type(2, 'INDEX')
+            #self.awg.set_sqel_event_target_index(2, 1)
+            self.awg.set_sqel_loopcnt(ncycles, 2)
