@@ -120,3 +120,51 @@ class TriggerSequence(BroadBeanSequence):
             elements.append(bbtools.blueprints2element(bps))
         
         return bbtools.elements2sequence(elements, self.name)
+
+		
+class QPTriggerSequence(BroadBeanSequence):
+    name = 'QPtrigger_sequence'
+
+    def sequence(self, trig_time=1e-6, cycle_time=5e-3,
+                 pre_trig_time=1e-6, use_event_seq=False):
+        elements = []
+
+        # readout sequence
+        end_buffer = 1e-6
+        low_time = cycle_time - trig_time - pre_trig_time - end_buffer
+
+        bps = bbtools.BluePrints(chan_map=self.chan_map, length=cycle_time, sample_rate=self.SR)
+        bps['pulse'].insertSegment(0, ramp, (0, 0), dur=cycle_time)
+
+        bps['ats_trigger'] = [(pre_trig_time, trig_time)]
+
+        if 'ro_trigger' in bps.map:
+            t0, t1 = 0, cycle_time
+            bps['ro_trigger'] = [(t0, t1)]
+        
+        for k, v in bps.map.items():
+            if '_trigger' in k and k not in ['ats_trigger', 'ro_trigger']:
+                t0, t1 = pre_trig_time + trig_time, low_time
+                bps[k] = [(t0, t1)]
+
+        elements.append(bbtools.blueprints2element(bps))
+
+        # Adding event seq
+        if use_event_seq:
+            bps = bbtools.BluePrints(chan_map=self.chan_map, length=cycle_time, sample_rate=self.SR)
+            bps['pulse'].insertSegment(0, ramp, (0, 0), dur=cycle_time)
+            
+            elements.append(bbtools.blueprints2element(bps))
+        
+        return bbtools.elements2sequence(elements, self.name)
+
+
+    def load_sequence(self, **kwargs):
+        self.setup_awg(**kwargs)
+		
+		use_event_seq = kwargs.get('use_event_seq', False)
+		
+        if use_event_seq:
+            self.awg.set_sqel_event_jump_type(2, 'INDEX')
+            self.awg.set_sqel_event_target_index(2, 1)
+            self.awg.set_sqel_loopcnt_to_inf(2)
