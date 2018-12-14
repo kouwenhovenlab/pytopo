@@ -22,7 +22,7 @@ from pytopo.sweep import sweep, do_experiment, hardsweep, measure
 
 from pytopo.rf.alazar.awg_sequences import TriggerSequence
 
-
+PHASE_DELAY = 347e-9
 class SoftSweepCtl(acquisition_controllers.PostIQCtl):
     """
     An acquisition controller that allows fast software spec.
@@ -127,7 +127,10 @@ def setup_soft_sweep(values, param, time_bin=0.2e-3, integration_time=10e-3,
 def get_soft_sweep_trace(ctl=None):
     if ctl is None:
         ctl = qcodes.Station.default.softsweep_ctl
-    data = np.squeeze(ctl.acquisition())[..., 0]
+    data_AB = np.squeeze(ctl.acquisition())
+    data_A = data_AB[...,0]
+    data_B = data_AB[...,1]
+    data = data_A*np.exp(-1.j*(np.angle(data_B)))
     mag, phase, re, im = np.abs(data), np.angle(data, deg=True), np.real(data), np.imag(data)
     return mag, phase, re, im    
         
@@ -148,6 +151,8 @@ def measure_soft_time_avg_spec(frequencies, rf_src, integration_time=10e-3, *arg
     else:
         ctl = qcodes.Station.default.softsweep_ctl
     mag, phase, re, im = get_soft_sweep_trace(ctl)
+    data = (re - 1.j*im)*np.exp(1.j*PHASE_DELAY*frequencies+np.pi)#np.conjugate(mag*np.exp(1.j*(np.pi*phase/180-PHASE_DELAY*frequencies)))
+    mag, phase, re, im = np.abs(data), np.angle(data, deg=True), np.real(data), np.imag(data)
     return (frequencies, np.vstack((mag.reshape(-1), phase.reshape(-1), re.reshape(-1), im.reshape(-1))))
 
 
