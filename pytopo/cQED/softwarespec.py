@@ -71,8 +71,6 @@ class SoftSweepCtl(acquisition_controllers.PostIQCtl):
                 self._settle()
             else:
                 print('Done!', end='\r')
-            
-            # awg_tools.trigger_awg_when_ready(awg)
         
     def pre_acquire(self):
         """
@@ -84,10 +82,8 @@ class SoftSweepCtl(acquisition_controllers.PostIQCtl):
         self._settle()
         
         self._step = 0        
-        # qcodes.Station.default.awg.force_trigger()
-        
+
         awg = qcodes.Station.default.awg
-        # awg_tools.trigger_awg_when_ready(awg)
         awg.start()
     
     
@@ -132,13 +128,13 @@ def get_soft_sweep_trace(ctl=None):
     if ctl is None:
         ctl = qcodes.Station.default.softsweep_ctl
     data = np.squeeze(ctl.acquisition())[..., 0]
-    mag, phase = np.abs(data), np.angle(data, deg=True)
-    return mag, phase    
+    mag, phase, re, im = np.abs(data), np.angle(data, deg=True), np.real(data), np.imag(data)
+    return mag, phase, re, im    
         
 
 @hardsweep(
     ind=[('frequency', 'Hz', 'array')], 
-    dep=[('signal_magnitude', 'V', 'array'), ('signal_phase', 'deg', 'array')]
+    dep=[('signal_magnitude', 'V', 'array'), ('signal_phase', 'deg', 'array'), ('signal_real', 'V', 'array'), ('signal_imag', 'V', 'array')]
 )
 def measure_soft_time_avg_spec(frequencies, rf_src, integration_time=10e-3, *arg, **kw):
     """
@@ -151,8 +147,8 @@ def measure_soft_time_avg_spec(frequencies, rf_src, integration_time=10e-3, *arg
         ctl = setup_soft_sweep(frequencies, rf_src.frequency, integration_time=integration_time, *arg, **kw)
     else:
         ctl = qcodes.Station.default.softsweep_ctl
-    mag, phase = get_soft_sweep_trace(ctl)
-    return (frequencies, np.vstack((mag.reshape(-1), phase.reshape(-1))))
+    mag, phase, re, im = get_soft_sweep_trace(ctl)
+    return (frequencies, np.vstack((mag.reshape(-1), phase.reshape(-1), re.reshape(-1), im.reshape(-1))))
 
 
 @hardsweep(
