@@ -22,7 +22,6 @@ from pytopo.sweep import sweep, do_experiment, hardsweep, measure
 
 from pytopo.rf.alazar.awg_sequences import TriggerSequence
 
-PHASE_DELAY = 347e-9
 class SoftSweepCtl(acquisition_controllers.PostIQCtl):
     """
     An acquisition controller that allows fast software spec.
@@ -124,13 +123,16 @@ def setup_soft_sweep(values, param, time_bin=0.2e-3, integration_time=10e-3,
     return ctl
         
 
-def get_soft_sweep_trace(ctl=None):
+def get_soft_sweep_trace(ctl=None, phase_reference_arm=True):
     if ctl is None:
         ctl = qcodes.Station.default.softsweep_ctl
     data_AB = np.squeeze(ctl.acquisition())
     data_A = data_AB[...,0]
     data_B = data_AB[...,1]
-    data = data_A*np.exp(-1.j*(np.angle(data_B)))
+    if phase_reference_arm == True:
+        data = data_A*np.exp(-1.j*(np.angle(data_B)))
+    else:
+        data = data_A
     mag, phase, re, im = np.abs(data), np.angle(data, deg=True), np.real(data), np.imag(data)
     return mag, phase, re, im    
         
@@ -139,7 +141,7 @@ def get_soft_sweep_trace(ctl=None):
     ind=[('frequency', 'Hz', 'array')], 
     dep=[('signal_magnitude', 'V', 'array'), ('signal_phase', 'deg', 'array'), ('signal_real', 'V', 'array'), ('signal_imag', 'V', 'array')]
 )
-def measure_soft_time_avg_spec(frequencies, rf_src, integration_time=10e-3, *arg, **kw):
+def measure_soft_time_avg_spec(frequencies, rf_src, integration_time=10e-3, phase_reference_arm_delay=0, *arg, **kw):
     """
     Use the softspec controller to measure a software-controlled spectrum.
     time_bin is the time per buffer, integration_time sets how many buffers we'll average per 
@@ -150,9 +152,10 @@ def measure_soft_time_avg_spec(frequencies, rf_src, integration_time=10e-3, *arg
         ctl = setup_soft_sweep(frequencies, rf_src.frequency, integration_time=integration_time, *arg, **kw)
     else:
         ctl = qcodes.Station.default.softsweep_ctl
-    mag, phase, re, im = get_soft_sweep_trace(ctl)
-    data = (re - 1.j*im)*np.exp(1.j*PHASE_DELAY*frequencies+np.pi)#np.conjugate(mag*np.exp(1.j*(np.pi*phase/180-PHASE_DELAY*frequencies)))
-    mag, phase, re, im = np.abs(data), np.angle(data, deg=True), np.real(data), np.imag(data)
+    mag, phase, re, im = get_soft_sweep_trace(ctl, **kw)
+    if phase_reference_arm_delay != 0: 
+        data = (re - 1.j*im)*np.exp(1.j*phase_reference_arm_delay*frequencies+np.pi) ##not sure why we need to complex conjugate, but else the phase lineshape of the resonator is inverted... (low to high)
+        mag, phase, re, im = np.abs(data), np.angle(data, deg=True), np.real(data), np.imag(data)
     return (frequencies, np.vstack((mag.reshape(-1), phase.reshape(-1), re.reshape(-1), im.reshape(-1))))
 
 
