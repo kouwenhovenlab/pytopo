@@ -22,7 +22,6 @@ from pytopo.sweep import sweep, do_experiment, hardsweep, measure
 
 from pytopo.rf.alazar.awg_sequences import TriggerSequence
 
-
 class SoftSweepCtl(acquisition_controllers.PostIQCtl):
     """
     An acquisition controller that allows fast software spec.
@@ -71,8 +70,6 @@ class SoftSweepCtl(acquisition_controllers.PostIQCtl):
                 self._settle()
             else:
                 print('Done!', end='\r')
-            
-            awg_tools.trigger_awg_when_ready(awg)
         
     def pre_acquire(self):
         """
@@ -84,7 +81,10 @@ class SoftSweepCtl(acquisition_controllers.PostIQCtl):
         self._settle()
         
         self._step = 0        
-        qcodes.Station.default.awg.force_trigger()
+
+        awg = qcodes.Station.default.awg
+        awg.start()
+    
     
     def buffer_done_callback(self, buffernum):
         """
@@ -95,7 +95,8 @@ class SoftSweepCtl(acquisition_controllers.PostIQCtl):
         
 
 def setup_soft_sweep(values, param, time_bin=0.2e-3, integration_time=10e-3, 
-                     post_integration_delay=10e-6, setup_awg=True, ctl=None):
+                     post_integration_delay=10e-6, setup_awg=True, ctl=None,
+                     waiting_time_per_value=0):
     
     awg = qcodes.Station.default.awg
     if ctl is None:
@@ -106,8 +107,9 @@ def setup_soft_sweep(values, param, time_bin=0.2e-3, integration_time=10e-3,
     
     if setup_awg:
         trig_seq = TriggerSequence(awg, SR=1e7)
-        trig_seq.wait = 'first'
-        trig_seq.setup_awg(cycle_time=time_bin, debug_signal=False, ncycles=navgs, plot=False)
+        trig_seq.wait = 'off'
+        trig_seq.setup_awg(cycle_time=time_bin, debug_signal=False, ncycles=navgs, plot=False,
+                           final_waiting_time=waiting_time_per_value, start_awg=False)
     
     ctl.param = param
     ctl.values = values
@@ -121,19 +123,25 @@ def setup_soft_sweep(values, param, time_bin=0.2e-3, integration_time=10e-3,
     return ctl
         
 
-def get_soft_sweep_trace(ctl=None):
+def get_soft_sweep_trace(ctl=None, phase_reference_arm=True):
     if ctl is None:
         ctl = qcodes.Station.default.softsweep_ctl
-    data = np.squeeze(ctl.acquisition())[..., 0]
-    mag, phase = np.abs(data), np.angle(data, deg=True)
-    return mag, phase    
+    data_AB = np.squeeze(ctl.acquisition())
+    data_A = data_AB[...,0]
+    data_B = data_AB[...,1]
+    if phase_reference_arm == True:
+        data = data_A*np.exp(-1.j*(np.angle(data_B)))
+    else:
+        data = data_A
+    mag, phase, re, im = np.abs(data), np.angle(data, deg=True), np.real(data), np.imag(data)
+    return mag, phase, re, im    
         
 
 @hardsweep(
     ind=[('frequency', 'Hz', 'array')], 
-    dep=[('signal_magnitude', 'V', 'array'), ('signal_phase', 'deg', 'array')]
+    dep=[('signal_magnitude', 'V', 'array'), ('signal_phase', 'deg', 'array'), ('signal_real', 'V', 'array'), ('signal_imag', 'V', 'array')]
 )
-def measure_soft_time_avg_spec(frequencies, rf_src, integration_time=10e-3, *arg, **kw):
+def measure_soft_time_avg_spec(frequencies, rf_src, integration_time=10e-3, phase_reference_arm_delay=0, *arg, **kw):
     """
     Use the softspec controller to measure a software-controlled spectrum.
     time_bin is the time per buffer, integration_time sets how many buffers we'll average per 
@@ -144,8 +152,11 @@ def measure_soft_time_avg_spec(frequencies, rf_src, integration_time=10e-3, *arg
         ctl = setup_soft_sweep(frequencies, rf_src.frequency, integration_time=integration_time, *arg, **kw)
     else:
         ctl = qcodes.Station.default.softsweep_ctl
-    mag, phase = get_soft_sweep_trace(ctl)
-    return (frequencies, np.vstack((mag.reshape(-1), phase.reshape(-1))))
+    mag, phase, re, im = get_soft_sweep_trace(ctl, **kw)
+    if phase_reference_arm_delay != 0: 
+        data = (re - 1.j*im)*np.exp(1.j*phase_reference_arm_delay*frequencies+np.pi) ##not sure why we need to complex conjugate, but else the phase lineshape of the resonator is inverted... (low to high)
+        mag, phase, re, im = np.abs(data), np.angle(data, deg=True), np.real(data), np.imag(data)
+    return (frequencies, np.vstack((mag.reshape(-1), phase.reshape(-1), re.reshape(-1), im.reshape(-1))))
 
 
 @hardsweep(
