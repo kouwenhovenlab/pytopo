@@ -138,7 +138,7 @@ class BaseAcqCtl(AcquisitionController):
             alazar.buffers_per_acquisition(buffers)
             alazar.allocated_buffers(nalloc)
         
-        if self.buffers_per_block() is not None and self.average_buffers():
+        if self.buffers_per_block() is not None: #  and self.average_buffers():
             self._nblocks = int(np.ceil(self.buffers_per_acquisition()/self.buffers_per_block()))
         else:
             self._nblocks = 1
@@ -170,7 +170,7 @@ class BaseAcqCtl(AcquisitionController):
         self.data_size = np.prod(self.buffer_shape)
         if not self.average_buffers():
             self.data_size *= self.buffers_per_acquisition()
-        elif self.average_buffers() and self._nblocks > 1:
+        else: #  self.average_buffers(): #  and self._nblocks > 1:
             self.data_size *= self._nblocks
 
         if self.data is None:
@@ -288,18 +288,13 @@ class RawAcqCtl(BaseAcqCtl):
         Returns:
             A tuple of the sizes of the data dimensions.
         """
-        if self.average_buffers():
-            shp = (self._nblocks,
-                   1,
-                   self.records_per_buffer(),
-                   self.samples_per_record(),
-                   self.number_of_channels)
-        else:
-            shp = (1,
-                   self.buffers_per_acquisition(),
-                   self.records_per_buffer(),
-                   self.samples_per_record(),
-                   self.number_of_channels)
+
+        nbuf = int(self.buffers_per_acquisition() / self._nblocks)
+        shp = (self._nblocks,
+               nbuf,
+               self.records_per_buffer(),
+               self.samples_per_record(),
+               self.number_of_channels)
         return shp
 
     def process_buffer(self, buf):
@@ -373,18 +368,12 @@ class PostDemodCtl(BaseAcqCtl):
         self.demod_tvals = self.tvals[::self.period][:self.demod_samples]
 
     def data_shape(self):
-        if self.average_buffers():
-            shp = (self._nblocks,
-                   1,
-                   self.records_per_buffer(),
-                   self.samples_per_record(),
-                   self.number_of_channels)
-        else:
-            shp = (1,
-                   self.buffers_per_acquisition(),
-                   self.records_per_buffer(),
-                   self.samples_per_record(),
-                   self.number_of_channels)
+        nbuf = int(self.buffers_per_acquisition() / self._nblocks)
+        shp = (self._nblocks,
+               nbuf,
+               self.records_per_buffer(),
+               self.samples_per_record(),
+               self.number_of_channels)
         return shp
 
     def process_buffer(self, buf):
