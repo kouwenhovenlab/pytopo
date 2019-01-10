@@ -9,9 +9,6 @@ from pytopo.rf.alazar import acquisition_tools
 from pytopo.rf.alazar import awg_sequences
 from pytopo.rf.alazar import acquisition_controllers
 
-from plottr import qcodes_dataset
-from plottr.qcodes_dataset import QcodesDatasetSubscriber
-
 from qcodes.instrument.parameter import Parameter
 from qcodes.dataset.plotting import plot_by_id
 from qcodes.dataset.data_export import get_data_by_id
@@ -84,7 +81,16 @@ class SoftSweepCtl(acquisition_controllers.PostIQCtl):
 
         awg = qcodes.Station.default.awg
         awg.start()
-    
+
+    def post_acquire(self):
+        data = super().post_acquire()
+
+        awg = qcodes.Station.default.awg
+        awg.stop()
+
+        time.sleep(0.2)
+
+        return data    
     
     def buffer_done_callback(self, buffernum):
         """
@@ -123,7 +129,7 @@ def setup_soft_sweep(values, param, time_bin=0.2e-3, integration_time=10e-3,
     return ctl
         
 
-def get_soft_sweep_trace(ctl=None, phase_reference_arm=True):
+def get_soft_sweep_trace(ctl=None, phase_reference_arm=False):
     if ctl is None:
         ctl = qcodes.Station.default.softsweep_ctl
     data_AB = np.squeeze(ctl.acquisition())
@@ -141,27 +147,32 @@ def get_soft_sweep_trace(ctl=None, phase_reference_arm=True):
     ind=[('frequency', 'Hz', 'array')], 
     dep=[('signal_magnitude', 'V', 'array'), ('signal_phase', 'deg', 'array'), ('signal_real', 'V', 'array'), ('signal_imag', 'V', 'array')]
 )
-def measure_soft_time_avg_spec(frequencies, rf_src, integration_time=10e-3, phase_reference_arm_delay=0, *arg, **kw):
+def measure_soft_time_avg_spec(frequencies, rf_src, integration_time=10e-3, 
+                               phase_reference_arm_delay=0, *arg, **kw):
     """
     Use the softspec controller to measure a software-controlled spectrum.
     time_bin is the time per buffer, integration_time sets how many buffers we'll average per 
     frequency point.
     """
     setup = kw.pop('setup', True)
+    phase_reference_arm = kw.pop('phase_reference_arm', False)
+
     if setup:
         ctl = setup_soft_sweep(frequencies, rf_src.frequency, integration_time=integration_time, *arg, **kw)
     else:
         ctl = qcodes.Station.default.softsweep_ctl
-    mag, phase, re, im = get_soft_sweep_trace(ctl, **kw)
+    mag, phase, re, im = get_soft_sweep_trace(ctl, phase_reference_arm=phase_reference_arm)
+    
     if phase_reference_arm_delay != 0: 
-        data = (re - 1.j*im)*np.exp(1.j*phase_reference_arm_delay*frequencies+np.pi) ##not sure why we need to complex conjugate, but else the phase lineshape of the resonator is inverted... (low to high)
+        data = (re - 1.j*im)*np.exp(1.j*phase_reference_arm_delay*frequencies) ##not sure why we need to complex conjugate, but else the phase lineshape of the resonator is inverted... (goes from low to high)
         mag, phase, re, im = np.abs(data), np.angle(data, deg=True), np.real(data), np.imag(data)
+    
     return (frequencies, np.vstack((mag.reshape(-1), phase.reshape(-1), re.reshape(-1), im.reshape(-1))))
 
 
 @hardsweep(
     ind=[('voltage', 'mV', 'array')], 
-    dep=[('signal_magnitude', 'V', 'array'), ('signal_phase', 'deg', 'array')]
+    dep=[('signal_magnitude', 'V', 'array'), ('signal_phase', 'deg', 'array'), ('signal_real', 'V', 'array'), ('signal_imag', 'V', 'array')]
 )
 def measure_soft_gate_sweep(voltages, ivvi_dac, integration_time=10e-3, *arg, **kw):
     """
@@ -170,12 +181,15 @@ def measure_soft_gate_sweep(voltages, ivvi_dac, integration_time=10e-3, *arg, **
     frequency point.
     """
     setup = kw.pop('setup', True)
+    phase_reference_arm = kw.pop('phase_reference_arm', False)
+
     if setup:
         ctl = setup_soft_sweep(voltages, ivvi_dac, integration_time=integration_time, *arg, **kw)
     else:
         ctl = qcodes.Station.default.softsweep_ctl
-    mag, phase = get_soft_sweep_trace(ctl)
-    return (voltages, np.vstack((mag.reshape(-1), phase.reshape(-1))))
+    mag, phase, re, im = get_soft_sweep_trace(ctl, phase_reference_arm=phase_reference_arm)
+
+    return (voltages, np.vstack((mag.reshape(-1), phase.reshape(-1), re.reshape(-1), im.reshape(-1))))
 
 
 def setup_single_averaged_IQpoint(time_bin, integration_time, setup_awg=True):
@@ -231,22 +245,25 @@ def fit_lorentzian(x,y):
     return out
 
 def get_resonator_spec_and_fit(frequencies):
-    mag, phase = get_soft_sweep_trace()
+    mag, phase, _, _ = get_soft_sweep_trace()
     out = fit_lorentzian(frequencies, mag**2)
     return mag, phase, out
 
 @hardsweep(
     ind=[('frequency', 'Hz', 'array')], 
-    dep=[('signal_magnitude', 'V', 'array'), ('signal_phase', 'deg', 'array'), ('peak_frq', 'Hz', 'array')]
+    dep=[('signal_magnitude', 'V', 'array'), ('signal_phase', 'deg', 'array'), ('signal_real', 'V', 'array'), ('signal_imag', 'V', 'array'), ('peak_frq', 'Hz', 'array')]
 )
 def measure_qubit_spec_optimize_resonator(resonator_frequencies, resonator_src, 
-                                          qubit_frequencies, qubit_src, integration_time=10e-3,
-                                          *arg, **kw):
+                                          qubit_frequencies, qubit_src, integration_time=10e-3, *arg, **kw):
     """
     Takes a resonator spec trace (using software spec), fits a lorentzian line shape,
     then sets the heterodyne source to the peak frequency, then measures
     qubit soft-spec.
     """    
+
+
+    phase_reference_arm = kw.pop('phase_reference_arm', False)
+
     ctl = setup_soft_sweep(resonator_frequencies, resonator_src.frequency, 
                            integration_time=integration_time, setup_awg=False, **kw)
     
@@ -257,8 +274,7 @@ def measure_qubit_spec_optimize_resonator(resonator_frequencies, resonator_src,
     
     ctl = setup_soft_sweep(qubit_frequencies, qubit_src.frequency, 
                            integration_time=integration_time, setup_awg=True, **kw)    
-    mag, phase = get_soft_sweep_trace(ctl)
-       
+    mag, phase, re, im = get_soft_sweep_trace(ctl, phase_reference_arm=phase_reference_arm)  
     
     return (qubit_frequencies.reshape(-1), 
-            np.vstack((mag.reshape(-1), phase.reshape(-1), np.ones(qubit_frequencies.size) * peak_frequency)))
+            np.vstack((mag.reshape(-1), phase.reshape(-1), re.reshape(-1), im.reshape(-1), np.ones(qubit_frequencies.size) * peak_frequency)))
