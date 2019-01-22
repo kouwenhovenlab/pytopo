@@ -9,3 +9,4 @@ labpythonconfig.py
 pytopo.egg-info
 .idea
 __pycache__/
+.mypy_cache/
