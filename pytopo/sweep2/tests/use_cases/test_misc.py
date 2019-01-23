@@ -2,7 +2,7 @@ from itertools import product
 from random import random
 from typing import List
 
-from ..core import Sweep, run, Bag
+from ...core import Sweep, run, Bag
 
 
 def test_2_level_sweep():
