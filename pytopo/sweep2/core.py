@@ -28,6 +28,18 @@ class Bag(list):
 
         raise KeyError(f'{key} not found')
 
+    def remove_for(self, key: str) -> None:
+        """
+        Remove value for key from the bag starting with the top of the stack
+        and looking deeper if its not found
+        """
+        for bag_section in self[::-1]:
+            if key in bag_section:
+                del bag_section[key]
+                return
+
+        raise KeyError(f'{key} not found')
+
     def add(self, key: str, value: Any) -> None:
         """Set key/value in the last element (top of the stack)"""
         self[-1][key] = value
