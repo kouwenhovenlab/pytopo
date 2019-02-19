@@ -159,6 +159,9 @@ class BroadBeanSequence():
                 seq.setSequencingTriggerWait(1, 1)
             elif self.wait == 'off':
                 seq.setSequencingTriggerWait(1, 0)
+            elif self.wait == 'all':
+                for i in range(1, seq.length_sequenceelements+1):
+                    seq.setSequencingTriggerWait(i, 1)
             elif self.wait == None:
                 pass
             else:
@@ -185,6 +188,10 @@ class BroadBeanSequence():
                 for ch_no, ch_set in self.chan_settings.items():
                     self.awg.set('ch{}_amp'.format(ch_no), ch_set['Vpp'])
                     self.awg.set('ch{}_offset'.format(ch_no), ch_set['offset'])
+                    for m, val in enumerate(ch_set['marker_hi']):
+                        self.awg.set('ch{}_m{}_high'.format(ch_no, m+1), val)
+                    for m, val in enumerate(ch_set['marker_lo']):
+                        self.awg.set('ch{}_m{}_low'.format(ch_no, m+1), val)
 
                 self.awg.clock_freq(self.SR)
 
