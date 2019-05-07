@@ -76,7 +76,7 @@ def test_inferred_from():
     a = ParamSpec("a", paramtype="numeric")
     b = ParamSpec("b", paramtype="numeric")
     c = ParamSpec("c", paramtype="numeric")
-    d = ParamSpec("d", paramtype="numeric", inferred_from='c')
+    d = ParamSpec("d", paramtype="numeric", inferred_from=['c'])
 
     table_a = ParamTable([a])
     table_b = ParamTable([b])
