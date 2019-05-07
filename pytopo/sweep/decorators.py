@@ -2,10 +2,10 @@ import numpy as np
 
 from typing import List, Iterable, Tuple, Callable, Any
 
-from qcodes import ParamSpec
 from pytopo.sweep import param_table
 from pytopo.sweep.param_table import ParamTable
 from pytopo.sweep.base import IteratorSweep
+from .param_spec import QcodesParamSpec as ParamSpec
 
 
 class _GetterSetterFunction:
@@ -42,7 +42,7 @@ def _generate_tables(names_units: Iterable[Tuple]) ->List[ParamTable]:
             Example: [("gate", "V"), ("Isd", "A", "array")]
 
     Returns:
-        A list of ParamTable with each table containing a single ParamSpec
+        A list of ParamTable with each table containing a single QcodesParamSpec
     """
     param_tables = []
 

@@ -1,10 +1,10 @@
 import itertools
 import pytest
 
-from qcodes import Parameter, ParamSpec
+from qcodes import Parameter
 from pytopo.sweep.base import Sweep, Measure, Nest, Chain
 from pytopo.sweep.param_table import ParamTable
-
+from ..param_spec import QcodesParamSpec as ParamSpec
 from ._test_tools import Factory
 
 

@@ -1,6 +1,7 @@
 from copy import deepcopy
 from typing import List
-from qcodes import ParamSpec
+
+from .param_spec import QcodesParamSpec as ParamSpec
 
 
 class ParamTable:
