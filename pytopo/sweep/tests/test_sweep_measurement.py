@@ -1,46 +1,13 @@
-import itertools
-import pytest
+"""
+This is mostly copy-paste of test_base but the test cases are user to
+test correct registering of parameters in SweepMeasurement.
+"""
+from qcodes.dataset.param_spec import ParamSpecBase
 
-from qcodes import Parameter
+from pytopo.sweep.measurement import SweepMeasurement
 from pytopo.sweep.base import Sweep, Measure, Nest, Chain
-from pytopo.sweep.param_table import ParamTable
-from ..param_spec import QcodesParamSpec as ParamSpec
-from ._test_tools import Factory
 
-
-@pytest.fixture()
-def indep_params():
-    """
-    Fixture of making independent parameters
-    """
-    def mk_tuple(name):
-
-        param = Parameter(name, set_cmd=None, get_cmd=None)
-
-        def setter(value):
-            param.set(value)
-            return {name: value}
-
-        return param, setter, ParamTable([ParamSpec(name, "numeric")])
-
-    return Factory(mk_tuple)
-
-
-@pytest.fixture()
-def dep_params():
-    """
-    Fixture of making dependent parameters
-    """
-    def mk_tuple(name):
-
-        param = Parameter(name, set_cmd=None, get_cmd=None)
-
-        def getter():
-            return {name: param.get()}
-
-        return param, getter, ParamTable([ParamSpec(name, "numeric")])
-
-    return Factory(mk_tuple)
+from .test_base import indep_params, dep_params
 
 
 def test_sweep_parameter(indep_params):
@@ -50,11 +17,16 @@ def test_sweep_parameter(indep_params):
     sweep_values = [0, 1, 2]
     parameter_sweep = Sweep(x, table, lambda: sweep_values)
 
-    assert list(parameter_sweep) == [{"x": value} for value in sweep_values]
+    meas = SweepMeasurement()
+    meas.register_sweep(parameter_sweep)
+
+    interdeps = meas._interdeps
+    assert interdeps.dependencies == {}
+    assert interdeps.inferences == {}
+    assert interdeps.standalones == {ParamSpecBase('x', 'numeric', '', '')}
 
 
 def test_nest(indep_params, dep_params):
-
     px, x, tablex = indep_params["x"]
     pi, i, tablei = dep_params["i"]
 
@@ -69,7 +41,14 @@ def test_nest(indep_params, dep_params):
         Measure(i, tablei)
     )
 
-    assert list(nest) == [{"x": xval, "i": f(xval)} for xval in sweep_values]
+    meas = SweepMeasurement()
+    meas.register_sweep(nest)
+
+    interdeps = meas._interdeps
+    assert interdeps.dependencies == {
+        ParamSpecBase('i', 'numeric', '', ''): (ParamSpecBase('x', 'numeric', '', ''),)}
+    assert interdeps.inferences == {}
+    assert interdeps.standalones == set()
 
 
 def test_nest_2d(indep_params, dep_params):
@@ -90,10 +69,15 @@ def test_nest_2d(indep_params, dep_params):
         Measure(i, tablei)
     )
 
-    assert list(nest) == [
-        {"x": xval, "y": yval, "i": f(xval, yval)}
-        for xval, yval in itertools.product(sweep_values_x, sweep_values_y)
-    ]
+    meas = SweepMeasurement()
+    meas.register_sweep(nest)
+
+    interdeps = meas._interdeps
+    assert interdeps.dependencies == {
+        ParamSpecBase('i', 'numeric', '', ''): (ParamSpecBase('x', 'numeric', '', ''), ParamSpecBase('y', 'numeric', '', ''))}
+    assert interdeps.inferences == {}
+    assert interdeps.standalones == set()
+
 
 
 def test_nest_3d(indep_params, dep_params):
@@ -117,22 +101,14 @@ def test_nest_3d(indep_params, dep_params):
         Measure(i, tablei)
     )
 
-    assert list(nest) == [
-        {"x": xval, "y": yval, "z": zval, "i": f(xval, yval, zval)}
-        for xval, yval, zval in itertools.product(
-            sweep_values_x, sweep_values_y, sweep_values_z)
-    ]
+    meas = SweepMeasurement()
+    meas.register_sweep(nest)
 
-
-def test_error_no_nest_in_measurable(indep_params, dep_params):
-    px, x, tablex = indep_params["x"]
-    pi, i, tablei = dep_params["i"]
-
-    with pytest.raises(TypeError):
-        Nest(
-            Measure(i, tablei),
-            Sweep(x, tablex, lambda: [])
-        )
+    interdeps = meas._interdeps
+    assert interdeps.dependencies == {
+        ParamSpecBase('i', 'numeric', '', ''): (ParamSpecBase('x', 'numeric', '', ''), ParamSpecBase('y', 'numeric', '', ''), ParamSpecBase('z', 'numeric', '', ''))}
+    assert interdeps.inferences == {}
+    assert interdeps.standalones == set()
 
 
 def test_chain_simple(indep_params):
@@ -147,10 +123,14 @@ def test_chain_simple(indep_params):
         Sweep(y, tabley, lambda: sweep_values_y)
     )
 
-    expected_result = [{"x": value} for value in sweep_values_x]
-    expected_result.extend([{"y": value} for value in sweep_values_y])
+    meas = SweepMeasurement()
+    meas.register_sweep(parameter_sweep)
 
-    assert list(parameter_sweep) == expected_result
+    interdeps = meas._interdeps
+    assert interdeps.dependencies == {}
+    assert interdeps.inferences == {}
+    assert interdeps.standalones == {
+        ParamSpecBase('y', 'numeric', '', ''), ParamSpecBase('x', 'numeric', '', '')}
 
 
 def test_nest_chain(indep_params, dep_params):
@@ -182,12 +162,17 @@ def test_nest_chain(indep_params, dep_params):
         )
     )
 
-    for xvalue in sweep_values_x:
-        for yvalue in sweep_values_y:
-            assert next(sweep_object) == {
-                "x": xvalue, "y": yvalue, "i": f(xvalue, yvalue)}
-            assert next(sweep_object) == {
-                "x": xvalue, "y": yvalue, "j": g(xvalue, yvalue)}
+    meas = SweepMeasurement()
+    meas.register_sweep(sweep_object)
+
+    interdeps = meas._interdeps
+    assert interdeps.dependencies == {
+        ParamSpecBase('i', 'numeric', '', ''): (ParamSpecBase('x', 'numeric', '', ''),
+                                                ParamSpecBase('y', 'numeric', '', '')),
+        ParamSpecBase('j', 'numeric', '', ''): (ParamSpecBase('x', 'numeric', '', ''),
+                                                ParamSpecBase('y', 'numeric', '', ''))}
+    assert interdeps.inferences == {}
+    assert interdeps.standalones == set()
 
 
 def test_interleave_1d_2d(indep_params, dep_params):
@@ -221,33 +206,19 @@ def test_interleave_1d_2d(indep_params, dep_params):
         )
     )
 
-    for xvalue in sweep_values_x:
-        assert next(sweep_object) == {"x": xvalue, "i": f(xvalue)}
-        for yvalue in sweep_values_y:
-            assert next(sweep_object) == {"x": xvalue, "y": yvalue,
-                                          "j":g(xvalue, yvalue)}
+    meas = SweepMeasurement()
+    meas.register_sweep(sweep_object)
+
+    interdeps = meas._interdeps
+    assert interdeps.dependencies == {
+        ParamSpecBase('i', 'numeric', '', ''): (ParamSpecBase('x', 'numeric', '', ''),),
+        ParamSpecBase('j', 'numeric', '', ''): (ParamSpecBase('x', 'numeric', '', ''),
+                                                ParamSpecBase('y', 'numeric', '', ''))}
+    assert interdeps.inferences == {}
+    assert interdeps.standalones == set()
 
 
-def test_error_no_nest_in_chain(indep_params, dep_params):
-    px, x, tablex = indep_params["x"]
-    py, y, tabley = indep_params["y"]
-
-    pi, i, tablei = dep_params["i"]
-
-    sweep_values_x = [0, 1, 2]
-    sweep_values_y = [4, 5, 6]
-
-    with pytest.raises(TypeError):
-        Nest(
-            Chain(
-                Sweep(x, tablex, lambda: sweep_values_x),
-                Sweep(y, tabley, lambda: sweep_values_y)
-            ),
-            Measure(i, tablei)
-        )
-
-
-def test_error_no_nest_in_chain_2(indep_params, dep_params):
+def test_nest_in_chain_2_whatever(indep_params, dep_params):
     px, x, tablex = indep_params["x"]
     pi, i, tablei = dep_params["i"]
     pj, j, tablej = dep_params["j"]
@@ -261,8 +232,11 @@ def test_error_no_nest_in_chain_2(indep_params, dep_params):
         )
     )
 
-    with pytest.raises(TypeError):
-        Nest(
-            sweep_object,
-            Measure(j, tablej)
-        )
+    meas = SweepMeasurement()
+    meas.register_sweep(sweep_object)
+
+    interdeps = meas._interdeps
+    assert interdeps.dependencies == {
+        ParamSpecBase('i', 'numeric', '', ''): (ParamSpecBase('x', 'numeric', '', ''),)}
+    assert interdeps.inferences == {}
+    assert interdeps.standalones == set()
