@@ -87,6 +87,7 @@ class BaseAcqCtl(AcquisitionController):
 
         self.add_parameter('average_buffers', set_cmd=None, initial_value=False)
         self.add_parameter('buffers_per_block', set_cmd=None, initial_value=None)
+        self.add_parameter('reference_channel', set_cmd=None, initial_value=None)
 
         if self._datadtype is None:
             if self._nbits == 8:
@@ -115,6 +116,21 @@ class BaseAcqCtl(AcquisitionController):
     def setup_acquisition(self, samples, records, buffers, 
                           allocated_buffers=None, acq_time=None, SR=None,
                           verbose=True):
+        """
+        Set up the alazar for acquisition.
+
+        :param samples: number of samples per record
+        :param records: number of records per buffer
+        :param buffers: number of buffers per acquisition
+        :param allocated buffers: (= None) number of buffers to physically reserve. 
+                                  If ``None``: -> number of buffers
+                                  Default: ``None``.
+        :param acq_time: (= None) acquisition time [s]. If ``None``, use number of samples
+                         provided, otherwise compute number of samples that comes
+                         closest to ``acq_time`` and use that.
+        :param SR: sample rate. if ``None`` (default), use current SR.
+        :param verbose: if True, print information on the set values.
+        """
 
         alazar = self._alazar
         
@@ -243,16 +259,22 @@ class BaseAcqCtl(AcquisitionController):
         
         if buffer_number is None or self.average_buffers():
             self.data[self._cur_block_idx*n : (self._cur_block_idx+1)*n] += data
-            self.handling_times[0] = (time.perf_counter() - t0) * 1e3
         else:
             self.data[buffer_number*n : (buffer_number+1)*n] = data
-            self.handling_times[buffer_number] = (time.perf_counter() - t0) * 1e3
+            
+
+        if buffer_number is None:
+            bn = 0
+        else:
+            bn = buffer_number
+        self.handling_times[buffer_number] = (time.perf_counter() - t0) * 1e3
 
     def post_acquire(self):
         if self.post_acquire_func:
             self.post_acquire_func()
             
-        return self.data[:self.data_size].reshape(self.data_shape())
+        data = self.data[:self.data_size].reshape(self.data_shape())
+        return data
         
     def do_acquisition(self):
         if self._alazar is not None:
@@ -414,9 +436,16 @@ class PostDemodCtl(BaseAcqCtl):
         imag = (data * 2 * self.sinarr)[:, :, :, :self.demod_samples*self.period,:].reshape(
             self._nblocks, -1, self.records_per_buffer(), self.demod_samples, 
                 self.period, self.number_of_channels).mean(axis=-2)
+        data = real + 1j * imag
+        
+        if self.reference_channel() is not None:
+            shp = list(data.shape)
+            shp[-1] = 1
+            ref_phase = np.angle(data[..., self.reference_channel()]).reshape(tuple(shp))
+            data = data * np.exp(-1j * ref_phase)
 
         self.post_acquire_time = time.perf_counter() - t0
-        return real + 1j * imag
+        return data
 
 class PostIQCtl(PostDemodCtl):
 

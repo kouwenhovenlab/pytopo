@@ -1,5 +1,7 @@
+from copy import deepcopy
 from typing import List
-from qcodes import ParamSpec
+
+from .param_spec import QcodesParamSpec as ParamSpec
 
 
 class ParamTable:
@@ -90,11 +92,22 @@ class ParamTable:
         if self._dependencies_resolved:
             return
 
-        param_spec_dict = {spec.name: spec for spec in self._param_specs}
+        param_spec_dict = {spec.name: i
+                           for i, spec in enumerate(self._param_specs)}
 
         for nest in self._nests:
             dependent_name = nest[-1]
-            param_spec_dict[dependent_name].add_depends_on(nest[:-1])
+            spec_index = param_spec_dict[dependent_name]
+            spec = self._param_specs[spec_index]
+
+            depends_on = deepcopy(spec._depends_on)
+            depends_on.extend(nest[:-1])
+
+            new_spec = ParamSpec(spec.name, spec.type, spec.label, spec.unit,
+                                 deepcopy(spec._inferred_from),
+                                 depends_on)
+
+            self._param_specs[spec_index] = new_spec
 
         self._dependencies_resolved = True
 
