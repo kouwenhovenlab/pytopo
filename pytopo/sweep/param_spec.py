@@ -2,7 +2,10 @@
 This module is taken from QCoDeS and contains old ParamSpec class
 (here renamed to QcodesParamSpec) that is used in sweep framework 
 in ParamTables. QCoDeS will soon deprecate ParamSpec in favor of 
-ParamSpecBase.
+ParamSpecBase. Note that QcodesParamSpec does not have anything
+that is related to ParamSpecBase (for example, base_version method
+has been removed), which allows QcodesParamSpec to be truly
+independent of QCoDeS.
 
 Copy-pasting code is not good, but it allows to future-proof sweep
 framework users with very little effort.
@@ -10,8 +13,6 @@ framework users with very little effort.
 
 from typing import Union, Sequence, List, Dict, Any, Optional
 from copy import deepcopy
-
-from qcodes.dataset.param_spec import ParamSpecBase
 
 
 class QcodesParamSpec():
@@ -156,16 +157,6 @@ class QcodesParamSpec():
         output['depends_on'] = self._depends_on
 
         return output
-
-    def base_version(self) -> ParamSpecBase:
-        """
-        Return a ParamSpecBase object with the same name, paramtype, label
-        and unit as this QcodesParamSpec
-        """
-        return ParamSpecBase(name=self.name,
-                             paramtype=self.type,
-                             label=self.label,
-                             unit=self.unit)
 
     @classmethod
     def deserialize(cls, ser: Dict[str, Any]) -> 'QcodesParamSpec':
