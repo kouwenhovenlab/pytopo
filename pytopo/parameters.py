@@ -78,7 +78,7 @@ class ConversionParameter(Parameter):
         )
         snapshot.update(
             {'source_parameter': self.src_param.snapshot(update=update),
-             'set_conversion': self.set_conv,
-             'get_conversion': self.get_conv}
+             'set_conversion': str(self.set_conv),
+             'get_conversion': str(self.get_conv)}
         )
         return snapshot
