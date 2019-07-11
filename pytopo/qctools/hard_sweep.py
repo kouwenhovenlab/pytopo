@@ -5,7 +5,8 @@ import numpy as np
 import qcodes as qc
 from qcodes.dataset.data_set import new_data_set
 from qcodes.instrument.base import Instrument
-from qcodes.dataset.measurements import Measurement, ParamSpec
+from qcodes.dataset.measurements import Measurement
+# from qcodes.dataset.measurements import ParamSpec
 
 
 def _param_list(params, convert_to_string=True):
