@@ -25,6 +25,9 @@ class ConversionParameter(Parameter):
     
     Note that the snapshot of the `src_param` source parameter is included
     when snapshotting `ConversionParameter`.
+
+    Note that `initial_value` argument is also supported, but it will
+    obviously only work if `set_conv` function is provided.
     """
     
     def __init__(self, name: str, src_param: Parameter,
@@ -39,12 +42,19 @@ class ConversionParameter(Parameter):
                                f'ConversionParameter because the one of the '
                                f'source parameter is supposed to be used '
                                f'together with get_conv and set_conv functions.')
-        
+
+        initial_value = None
+        if hasattr(kw, 'initial_value'):
+            initial_value = kw['initial_value']
+
         super().__init__(name, **kw)
         
         self.src_param = src_param
         self.get_conv = get_conv
         self.set_conv = set_conv
+
+        if initial_value is not None:
+            self.set(initial_value)
 
     def get_raw(self):
         return self.get_conv(self.src_param())
