@@ -45,9 +45,11 @@ class ConversionParameter(Parameter):
                                f'source parameter is supposed to be used '
                                f'together with get_conv and set_conv functions.')
 
+        initial_value_provided = False
         initial_value = None
-        if hasattr(kw, 'initial_value'):
-            initial_value = kw['initial_value']
+        if 'initial_value' in kw.keys():
+            initial_value_provided = True
+            initial_value = kw.pop('initial_value')
 
         super().__init__(name, **kw)
         
@@ -55,7 +57,7 @@ class ConversionParameter(Parameter):
         self.get_conv = get_conv
         self.set_conv = set_conv
 
-        if initial_value is not None:
+        if initial_value_provided:
             self.set(initial_value)
 
     def get_raw(self):
