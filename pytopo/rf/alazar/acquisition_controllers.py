@@ -194,7 +194,7 @@ class BaseAcqCtl(AcquisitionController):
         
         if self.data.size < self.data_size:
             print(f'Currently allocated data not sufficient: '
-                   'Need {self.data_size}, have {self.data.size}')
+                  f'Need {self.data_size}, have {self.data.size}')
             self.allocate_data(self.data_size)
 
         if self.data.dtype != self._datadtype:
