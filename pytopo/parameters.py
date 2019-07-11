@@ -1,3 +1,5 @@
+from typing import Optional, Sequence, Dict
+
 from qcodes.instrument.parameter import Parameter
 
 
