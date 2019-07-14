@@ -1,9 +1,9 @@
 from typing import Optional, Sequence, Dict
 
-from qcodes.instrument.parameter import Parameter
+from qcodes.instrument.parameter import Parameter, DelegateParameter
 
 
-class ConversionParameter(Parameter):
+class ConversionParameter(DelegateParameter):
     """
     The `ConversionParameter` wraps a given source parameter `src_param`
     (similar to `DelegateParameter` from QCoDeS), and it allows to inject
@@ -34,16 +34,6 @@ class ConversionParameter(Parameter):
     
     def __init__(self, name: str, src_param: Parameter,
                  get_conv, set_conv=None, **kw):
-        for ka, attr in zip(('unit', 'label', 'snapshot_value'),
-                             ('unit', 'label', '_snapshot_value')):
-            kw[ka] = kw.get(ka, getattr(src_param, attr))
-
-        for cmd in ('set_cmd', 'get_cmd'):
-            if cmd in kw:
-                raise KeyError(f'It is not allowed to set "{cmd}" of a '
-                               f'ConversionParameter because the one of the '
-                               f'source parameter is supposed to be used '
-                               f'together with get_conv and set_conv functions.')
 
         initial_value_provided = False
         initial_value = None
@@ -51,9 +41,8 @@ class ConversionParameter(Parameter):
             initial_value_provided = True
             initial_value = kw.pop('initial_value')
 
-        super().__init__(name, **kw)
-        
-        self.src_param = src_param
+        super().__init__(name, source=src_param, **kw)
+
         self.get_conv = get_conv
         self.set_conv = set_conv
 
@@ -61,13 +50,13 @@ class ConversionParameter(Parameter):
             self.set(initial_value)
 
     def get_raw(self):
-        return self.get_conv(self.src_param())
+        return self.get_conv(self.source())
 
     def set_raw(self, value):
         if self.set_conv is None:
             raise NotImplementedError("No set conversion implemented.")
 
-        return self.src_param(self.set_conv(value))
+        return self.source(self.set_conv(value))
 
     def snapshot_base(self, update: bool = True,
                       params_to_skip_update: Optional[Sequence[str]] = None
@@ -77,8 +66,7 @@ class ConversionParameter(Parameter):
             params_to_skip_update=params_to_skip_update
         )
         snapshot.update(
-            {'source_parameter': self.src_param.snapshot(update=update),
-             'set_conversion': str(self.set_conv),
+            {'set_conversion': str(self.set_conv),
              'get_conversion': str(self.get_conv)}
         )
         return snapshot
