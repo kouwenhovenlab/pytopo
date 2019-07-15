@@ -96,14 +96,6 @@ def test_getter_with_2_array_paramtype():
 
 
 def test_getter_with_1_array_and_1_numeric_paramtype():
-    """
-    This situation is indeed weird, because it is supposed to be achieved
-    with two getters - a chain of one getter with numeric paramtype,
-    and another one with array paramtype.
-
-    Due to the implementation of the getter, this case will not work (see the
-    caught exception)
-    """
     @setter(('repetition', '#', 'numeric'))
     def repetition_param(repetition):
         """
@@ -133,17 +125,14 @@ def test_getter_with_1_array_and_1_numeric_paramtype():
     assert spec_phas.unit == "deg"
     assert spec_phas.type == "array"
 
-    # the exception originates from `numpy.atleast_1d` call in `getter`
-    with pytest.raises(ValueError, match="setting an array element with a "
-                                         "sequence."):
-        so = sweep(repetition_param, [1])(
-            measure(alazar_output)
-        )
+    so = sweep(repetition_param, [1])(
+        measure(alazar_output)
+    )
 
-        sweep_output = list(so)
+    sweep_output = list(so)
 
-        assert isinstance(sweep_output, list)
-        assert 1 == len(sweep_output)
-        assert magn_val == sweep_output[0]['magn']
-        assert 1 == sweep_output[0]['repetition']
-        assert numpy.allclose(sweep_output[0]['phas'], phas_vals)
+    assert isinstance(sweep_output, list)
+    assert 1 == len(sweep_output)
+    assert magn_val == sweep_output[0]['magn']
+    assert 1 == sweep_output[0]['repetition']
+    assert numpy.allclose(sweep_output[0]['phas'], phas_vals)

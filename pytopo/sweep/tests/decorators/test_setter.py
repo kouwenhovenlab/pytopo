@@ -103,14 +103,6 @@ def test_getter_with_2_array_paramtype():
 
 
 def test_getter_with_1_array_and_1_numeric_paramtype():
-    """
-    This situation is indeed weird, because it is supposed to be achieved
-    with two setters - a zip (?) of one setter with numeric paramtype,
-    and another one with array paramtype.
-
-    Due to the implementation of the setter and some other classes (Sweep,
-    IteratorSweep), this case will not work (see the caught exception)
-    """
     @getter(('luck', '#', 'numeric'))
     def luck_param():
         return 1
@@ -136,18 +128,14 @@ def test_getter_with_1_array_and_1_numeric_paramtype():
     assert spec_phas.unit == "deg"
     assert spec_phas.type == "array"
 
-    # the exception originates from `numpy.atleast_1d` call in `Sweep` class
-    # that is used by `setter` through `IteratorSweep`
-    with pytest.raises(ValueError, match="setting an array element with a "
-                                         "sequence."):
-        so = sweep(dummy_setter, [[magn_val, phas_vals]])(
-            measure(luck_param)
-        )
+    so = sweep(dummy_setter, [[magn_val, phas_vals]])(
+        measure(luck_param)
+    )
 
-        sweep_output = list(so)
+    sweep_output = list(so)
 
-        assert isinstance(sweep_output, list)
-        assert 1 == len(sweep_output)
-        assert magn_val == sweep_output[0]['magn']
-        assert 1 == sweep_output[0]['luck']
-        assert numpy.allclose(sweep_output[0]['phas'], phas_vals)
+    assert isinstance(sweep_output, list)
+    assert 1 == len(sweep_output)
+    assert magn_val == sweep_output[0]['magn']
+    assert 1 == sweep_output[0]['luck']
+    assert numpy.allclose(sweep_output[0]['phas'], phas_vals)

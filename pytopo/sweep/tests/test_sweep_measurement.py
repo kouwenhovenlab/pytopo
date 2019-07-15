@@ -2,7 +2,11 @@
 This is mostly copy-paste of test_base but the test cases are user to
 test correct registering of parameters in SweepMeasurement.
 """
-from qcodes.dataset.param_spec import ParamSpecBase
+try:
+    from qcodes.dataset.descriptions.param_spec import ParamSpecBase
+except ImportError:
+    # QCoDeS prio to version 0.4.0
+    from qcodes.dataset.param_spec import ParamSpecBase
 
 from pytopo.sweep.measurement import SweepMeasurement
 from pytopo.sweep.base import Sweep, Measure, Nest, Chain
