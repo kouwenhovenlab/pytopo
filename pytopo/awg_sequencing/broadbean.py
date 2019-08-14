@@ -219,7 +219,7 @@ class BroadBeanSequence():
                 for ch_no, ch_desc in self.chan_map.items():
                     chan = self.awg.channels[ch_no-1]
 
-                    track_number = 1
+                    track_number = ch_no
                     chan.setSequenceTrack(seq.name, track_number)
 
                     chan.resolution(12)
