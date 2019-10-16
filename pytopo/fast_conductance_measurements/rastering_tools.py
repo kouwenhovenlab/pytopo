@@ -49,7 +49,7 @@ class MidasMdacAwgParentRasterer(Instrument):
                         set_cmd=None,
                         initial_value=32,
                         vals=Ints(1,4096),
-                        docstring="Number of 284ns-long samples to"
+                        docstring="Number of 284.44 ns-long samples to"
                         " be averaged to get a single data pixel."
                         " Must be a power of 2.")
 
@@ -170,6 +170,47 @@ class MidasMdacAwgParentRasterer(Instrument):
 ##################################################################
 
 class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
+    """
+    How to use:
+        1. Configure Midas channels
+        2. Create a rasterer object:
+            >>> rSlow = rast.MidasMdacAwg1DSlowRasterer('rSlow',
+                                midas.name, mdac.name, AWG.name)
+        3. Set up the MDAC channel, voltage range, averaging
+            and resolution:
+            >>> rSlow.MDAC_channel(1)
+            >>> rSlow.MDAC_Vpp(0.1)
+            >>> rSlow.samples_per_pixel(512)
+            >>> rSlow.pixels(128)
+        4. Run routines to automatically configure AWG and Midas:
+            >>> rSlow.prepare_AWG()
+            >>> rSlow.AWG_channels_on()
+            >>> rSlow.prepare_MIDAS()
+        5. Measure:
+            >>> data = rSlow.arm_acquire_reshape()
+            After acquisition the MDAC channel voltage is set to
+            the value from the beginning of the measurement.
+        6. "data" is an (8 x pixels) array with the obtained data
+            At this time no scaling of the sweeped axis is provided.
+            The MDAC sweeps the voltage from Vmdac-MDAC_Vpp/2
+            to Vmdac+MDAC_Vpp/2, where Vmdac is the channel setting
+            at the moment arm_acquire_reshape method is executed.
+        7. Investigate the data to verify if the MDAC sweep
+            is synchronized with the AWG. If needed, adjust
+            pre_wait parameter and repeat points 4-6
+        8. Executing 4 between measurements is only required
+            if you changed any of the following parameters:
+            - AWG_channel
+            - samples_per_pixel
+            - midas_retriggering_time
+            - pre_wait
+            - pixels
+            - AWG parameters
+            Executing 4 is NOT required if you change:
+            - MDAC_channel
+            - MDAC_Vpp
+            - Midas channel parameters
+    """
 
     def __init__(self, name, MIDAS_name, MDAC_name, AWG_name, **kwargs):
         """
@@ -301,65 +342,307 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
             d = data[i,:self.pixels()]
             reshaped.append(d)
 
-        return reshaped
+        return np.array(reshaped)
+
+#################################################################
+######################## 1D AWG rasterer ########################
+#################################################################
+
+class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
+    """
+    How to use:
+        1. Configure Midas channels
+        2. Create a rasterer object:
+            >>> rFast = rast.MidasMdacAwg1DFastRasterer('rFast',
+                                midas.name, mdac.name, AWG.name)
+            MDAC name is required but not used anywhere.
+        3. Set up the voltage range, averaging and resolution:
+            >>> rFast.AWG_Vpp(0.1)
+            >>> rFast.samples_per_pixel(512)
+            >>> rFast.pixels(128)
+        4. Run routines to automatically configure AWG and Midas:
+            >>> rFast.prepare_AWG()
+            >>> rFast.AWG_channels_on()
+            >>> rFast.prepare_MIDAS()
+        5. Measure:
+            >>> data = rFast.arm_acquire_reshape()
+        6. "data" is an (8 x pixels) array with the obtained data
+            At this time no scaling of the sweeped axis is provided.
+        7. Investigate the data to verify if Midas
+            is synchronized with the AWG sawtooth. If needed, adjust
+            pre_wait and trigger_delay parameters and repeat
+            points 4-6
+        8. Executing 4 between measurements is only required
+            if you changed any of the following parameters:
+            - AWG_channel
+            - samples_per_pixel
+            - midas_retriggering_time
+            - pre_wait
+            - pixels
+            - samples_per_ramp
+            - AWG_Vpp
+            - AWG parameters
+            Executing 4 is NOT required if you change:
+            - Midas channel parameters
+    """
+
+    def __init__(self, name, MIDAS_name, MDAC_name, AWG_name, **kwargs):
+        """
+        Create a MidasMdacAwgRasterer instance
+
+        Args:
+            name (str): rasterer instrument name
+            MIDAS_name (str): name of the Midas to be used
+            MDAC_name (str): name of the MDAC to be used
+            AWG_name (str): name of the Tektronix 5014 to be used
+            **kwargs: other kwargs passed to Instrument init
+
+        Returns:
+            MidasMdacAwgRasterer
+        """
+
+        super().__init__(name,
+                MIDAS_name, MDAC_name, AWG_name,
+                **kwargs)
+
+        self.add_parameter('pixels',
+                            set_cmd=None,
+                            initial_value=64,
+                            vals=Ints(1,2048),
+                            docstring="Number of pixels along the axis"
+                            " controlled by the MDAC sweep."
+                            " Must be a power of 2.")
+
+        self.add_parameter('samples_per_ramp',
+                        set_cmd=None,
+                        initial_value=1024,
+                        vals=Ints(128,4096),
+                        docstring="Number of samples taken per"
+                        " single AWG ramp. Should be the largest"
+                        " number possible that does not lead to"
+                        " the distortions."
+                        " Must be a power of 2.")
+
+        self.add_parameter('AWG_Vpp',
+                            set_cmd=None,
+                            initial_value=0.1,
+                            vals=Numbers(min_value=0),
+                            docstring="Vpp of the sawtooth applied with AWG,"
+                            " Not adjusted for the attenuation of the"
+                            " high-frequency lines. DC offset of the voltage"
+                            " needs to be set separately with whatever"
+                            " instrument you use for that.")
+
+        # only gettable
+        self.add_parameter('samples_total',
+                            get_cmd=self._get_samples_total)
+
+        self.add_parameter('points_total',
+                            get_cmd=self._get_points_total)
+
+        self.add_parameter('ramp_time_fast',
+                            get_cmd=self._get_ramp_time_fast)
+
+        self.add_parameter('samples_per_point',
+                            get_cmd=self._get_samples_per_point)
+
+        self.add_parameter('ramps_per_acquisition',
+                            get_cmd=self._get_ramps_per_acquisition)
+
+        self.add_parameter('buffers_per_acquisition',
+                            get_cmd=self._get_buffers_per_acquisition)
+
+    ################### Get functions ###################
+
+    def _get_samples_total(self):
+        return int(self.samples_per_pixel()*self.pixels())
+
+    def _get_points_total(self):
+        return int(self.ramps_per_acquisition()*self.pixels())
+
+    def _get_ramp_time_fast(self):
+        # calculate the AWG sawtooth period corresponding to
+        # the number of samples per single ramp
+        # plus time for the Midas to retrigger
+        # in principle time for th emidas to retrigges can be set to 0
+        tM = self.samples_to_time(self.samples_per_ramp())
+        tW = self.pixels()*self.midas_retriggering_time()
+        return tM+tW
+
+    def _get_samples_per_point(self):
+        return int(self.samples_per_ramp()/self.pixels())
+
+    def _get_ramps_per_acquisition(self):
+        samples_per_acquisition =  self.samples_per_pixel()*self.pixels()
+        ramps_per_acquisition = samples_per_acquisition/self.samples_per_ramp()
+        return int(max(ramps_per_acquisition,1))
+
+    def _get_buffers_per_acquisition(self):
+        sample_limited_minimum = self.samples_total()/self.samples_per_point()/self.POINTS_PER_BUFFER
+        resolution_limited_minimum = self.pixels()/self.POINTS_PER_BUFFER
+        return int(max(sample_limited_minimum, resolution_limited_minimum,1))
+
+    ################### Other functions ###################
+
+    def prepare_AWG(self):
+        # use low AWG sampling rate, but not smaller than
+        # minimum 10 MS/s
+        AWG_sampling_rate = max(200/self.ramp_time_fast(), 10e6)
+
+        # generate a sequence to upload to AWG
+        self.sequence = single_sawtooth_many_triggers(self.AWG,
+                            AWG_sampling_rate,
+                            self.AWG_channel(),
+                            self.ramp_time_fast(),
+                            self.pixels(),
+                            self.midas_buffer_flushing_time(),
+                            self.AWG_Vpp(),
+                            pre_wait=self.pre_wait())
+
+        # upload
+        package = self.sequence.outputForAWGFile()
+        AWGfile = self.AWG.make_awg_file(*package[:])
+
+        self.AWG.send_awg_file('raster',AWGfile)
+        self.AWG.load_awg_file('raster')
+
+        self.AWG.clock_freq(AWG_sampling_rate)
+
+        return self.sequence
+
+    def prepare_MIDAS(self):
+        self.MIDAS.sw_mode('single_point')
+        self.MIDAS.single_point_num_avgs(self.samples_per_point())
+        self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition())
+
+    def fn_start(self):
+        # trigger AWG
+        self.AWG.force_trigger()
+
+    def fn_stop(self):
+        self.AWG.stop()
+
+    def do_acquisition(self):
+        data = self.MIDAS.capture_2d_trace(
+                            fn_start=self.fn_start,
+                            fn_stop=self.fn_stop)
+        return np.array(data)
+
+    def reshape(self, data):
+        reshaped = []
+        for i in range(8):
+            d = data[:,i,:]
+            if self.points_total()<2048:
+                d = d[0,:self.points_total()]
+            res = np.reshape(d, (self.ramps_per_acquisition(),
+                                self.pixels()))
+            avg = np.average(res, axis=0)
+            reshaped.append(avg)
+
+        return np.array(reshaped)
+
+
 #################################################################
 ########################## 2D rasterer ##########################
 #################################################################
 
 class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
     """
-        The class responsible for dual gate rastering with
-        MIDAS, MDAC and Tektronix 5014.
+    The class responsible for dual gate rastering with
+    MIDAS, MDAC and Tektronix 5014.
 
-        Relevant parameters:
-        - AWG_channel
-        - MDAC_channel
-        - AWG_Vpp (amplitude of the sawtooth applied by AWG)
-        - MDAC_Vpp (amplitude of the MDAC sweep)
-        - samples_per_pixel (indicates averaging per point;
-            1 sample = 284 ns; only values 2^N will yield
-            successful measurement)
-        - pixels_per_line (resolution along the axis
-            controlled by AWG; only values 2^N will yield
-            successful measurement)
-        - lines_per_acquisition (resolution along the axis
-            controlled by MDAC; only values 2^N will yield
-            successful measurement)
-        - samples_per_ramp (specifies the length of the sawtooth
-            applied by AWG; 1 sample = 284 ns; only values 2^N will
-            yield successful measurement; should set to the largest
-            value, for which the distortions are not observed)
-        - midas_buffer_flushing_time (additional waiting time between
-            some of the sawtooth teeth, for the Midas to flush the
-            FIFO buffer; maual specifies this needs to be no longer
-            than 0.6 ms, but I found out that this is often not
-            sufficient and recommend using 1 ms to reduce
-            how often triggers are missed)
+    Relevant parameters:
+    - AWG_channel
+    - MDAC_channel
+    - AWG_Vpp (amplitude of the sawtooth applied by AWG)
+    - MDAC_Vpp (amplitude of the MDAC sweep)
+    - samples_per_pixel (indicates averaging per point;
+        1 sample = 284.44 ns; only values 2^N will yield
+        successful measurement)
+    - pixels_per_line (resolution along the axis
+        controlled by AWG; only values 2^N will yield
+        successful measurement)
+    - lines_per_acquisition (resolution along the axis
+        controlled by MDAC; only values 2^N will yield
+        successful measurement)
+    - samples_per_ramp (specifies the length of the sawtooth
+        applied by AWG; 1 sample = 284.44 ns; only values 2^N will
+        yield successful measurement; should set to the largest
+        value, for which the distortions are not observed)
+    - midas_buffer_flushing_time (additional waiting time between
+        some of the sawtooth teeth, for the Midas to flush the
+        FIFO buffer; maual specifies this needs to be no longer
+        than 0.6 ms, but I found out that this is often not
+        sufficient and recommend using 1 ms to reduce
+        how often triggers are missed)
 
-        The idea is that the user only needs to specify an averaging
-        time per pixel, resolution and sawtooth period (constrained by
-        the bandwidth of the setup). The order in which the data
-        is acquired is taken care of automatically.
-
-        Note that due to 1/f and 50 Hz noise the background may vary slowly
-        aong the slow/MDAC axis.
+    The idea is that the user only needs to specify an averaging
+    time per pixel, resolution and sawtooth period (constrained by
+    the bandwidth of the setup). The order in which the data
+    is acquired is taken care of automatically.
+    
+    Naming convention:
+    - sample: 284.44 ns long sample measured by Midas
+    - point: a number of samples averaged together during a single ramp
+    - ramp: a single tooth of an AWG sawtooth
+    - pixel: a single data point in the final dataset. Depending on
+        demanded samples_per_pixel several points (from consequtive
+        ramps) may be averaged together to get a single pixel
+    - line: a collection of pixels forming a single line in
+        the final dataset. Depending on demanded samples_per_pixel
+        data from one or more ramps may be averaged together to
+        yield a single line
+    - buffer: a collection of 2048 points. This number is strictly
+        specified by the Midas user manual
+    - acquisition: a collection of buffers with all of the acquired data
         
-        Naming convention:
-        - sample: 284 ns long sample measured by Midas
-        - point: a number of samples averaged together during a single ramp
-        - ramp: a single tooth of an AWG sawtooth
-        - pixel: a single data point in the final dataset. Depending on
-            demanded samples_per_pixel several points (from consequtive
-            ramps) may be averaged together to get a single pixel
-        - line: a collection of pixels forming a single line in
-            the final dataset. Depending on demanded samples_per_pixel
-            data from one or more ramps may be averaged together to
-            yield a single line
-        - buffer: a collection of 2048 points. This number is strictly
-            specified by the Midas user manual
-        - acquisition: a collection of buffers with all of the acquired data
-
-        """
+    How to use:
+        1. Configure Midas channels
+        2. Create a rasterer object:
+            >>> r2D = rast.MidasMdacAwg1DFastRasterer('r2D',
+                                midas.name, mdac.name, AWG.name)
+        3. Set up the MDAC channel, voltage ranges, averaging
+            and resolution:
+            >>> r2D.MDAC_channel(1)
+            >>> r2D.MDAC_Vpp(0.8)
+            >>> r2D.AWG_Vpp(0.1)
+            >>> r2D.samples_per_pixel(64)
+            >>> r2D.pixels_per_line(128)
+            >>> r2D.lines_per_acquisition(128)
+        4. Run routines to automatically configure AWG and Midas:
+            >>> r2D.prepare_AWG()
+            >>> r2D.AWG_channels_on()
+            >>> r2D.prepare_MIDAS()
+        5. Measure:
+            >>> data = r2D.arm_acquire_reshape()
+        6. "data" is an (8 x pixels x lines) array with
+            the obtained data. At this time no scaling
+            of the sweeped axis is provided.
+            The MDAC sweeps the voltage from Vmdac-MDAC_Vpp/2
+            to Vmdac+MDAC_Vpp/2, where Vmdac is the channel setting
+            at the moment arm_acquire_reshape method is executed.
+        7. Investigate the data to verify if Midas
+            is synchronized with the AWG sawtooth and if
+            AWG starts in outputting sawtooth in sync with
+            MDAC starting the sweep. If needed, adjust
+            pre_wait and trigger_delay parameters and repeat
+            points 4-6
+        8. Executing 4 between measurements is only required
+            if you changed any of the following parameters:
+            - AWG_channel
+            - samples_per_pixel
+            - midas_retriggering_time
+            - pre_wait
+            - pixels_per_line
+            - lines_per_acquisition
+            - samples_per_ramp
+            - AWG_Vpp
+            - AWG parameters
+            Executing 4 is NOT required if you change:
+            - MDAC_channel
+            - MDAC_Vpp
+            - Midas channel parameters
+    """
 
     def __init__(self, name, MIDAS_name, MDAC_name, AWG_name, **kwargs):
         """
@@ -570,7 +853,7 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
             avg = np.average(res, axis=1)
             reshaped.append(avg)
 
-        return reshaped
+        return np.array(reshaped)
 
 ######################################################################
 ########################## helper functions ##########################
