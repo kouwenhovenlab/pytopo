@@ -1,12 +1,21 @@
 import broadbean as bb
 ramp = bb.PulseAtoms.ramp
 
-from qcodes.utils.validators import Ints, Numbers
+from qcodes.utils.validators import Ints, Numbers, Lists
 from qcodes.instrument.base import Instrument
 
 import numpy as np
 
 import time
+
+"""
+Known issues:
+1. capture_2d_trace moves returns the num_sweeps_2d-1 first traces from
+    the current acquisition and a last trace from the frevious acquisition.
+    Firmware version: midas_release_v1_03_085.hex
+Search for WORKAROUND for places when the tweaks were made to work around
+the issues
+"""
 
 class MidasMdacAwgParentRasterer(Instrument):
     """
@@ -30,7 +39,7 @@ class MidasMdacAwgParentRasterer(Instrument):
 
         super().__init__(name, **kwargs)
 
-        self.SAMPLE_TIME = (1/1.8e9)*512
+        self.SAMPLE_TIME = (1/1.8e9)*512 # 284.44 ns
         self.POINTS_PER_BUFFER = 2048
 
         self.MIDAS = self.find_instrument(MIDAS_name)
@@ -45,10 +54,16 @@ class MidasMdacAwgParentRasterer(Instrument):
                             " a sawtooth. Marker 1 of this channel is used"
                             " as a trigger for Midas.")
 
+        self.add_parameter('MIDAS_channels',
+                            set_cmd=None,
+                            initial_value=[1],
+                            vals=Lists(elt_validator=Ints(min_value=1,max_value=8)),
+                            docstring="List of Midas channels to return")
+
         self.add_parameter('samples_per_pixel',
                         set_cmd=None,
                         initial_value=32,
-                        vals=Ints(1,4096),
+                        vals=Ints(1,8192),
                         docstring="Number of 284.44 ns-long samples to"
                         " be averaged to get a single data pixel."
                         " Must be a power of 2.")
@@ -56,7 +71,7 @@ class MidasMdacAwgParentRasterer(Instrument):
         self.add_parameter('midas_retriggering_time',
                         set_cmd=None,
                         initial_value=10e-9,
-                        vals=Numbers(1e-9, 1e-6),
+                        vals=Numbers(1e-9, 1e-3),
                         docstring="Additional waiting time to let"
                         " the Midas ready to acquire next sample")
 
@@ -162,8 +177,13 @@ class MidasMdacAwgParentRasterer(Instrument):
         self.arm_for_acquisition()
         time.sleep(1e-3)
         data = self.do_acquisition()
-        self.data = self.reshape(data)
-        return self.data
+        # return data
+        data = self.reshape(data)
+        # pick selected MIDAS channels
+        self.data = []
+        for ch in self.MIDAS_channels():
+            self.data.append(data[ch-1])
+        return np.array(self.data)
 
 ##################################################################
 ######################## 1D MDAC rasterer ########################
@@ -209,6 +229,7 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
             Executing 4 is NOT required if you change:
             - MDAC_channel
             - MDAC_Vpp
+            - MIDAS_channels
             - Midas channel parameters
     """
 
@@ -316,7 +337,8 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
 
         # set the MDAC channel to the initial voltage
         self.V_start = MDAC_ch.voltage()
-        MDAC_ch.voltage(self.V_start - self.MDAC_Vpp()/2)
+        MDAC_ch.ramp(self.V_start - self.MDAC_Vpp()/2, ramp_rate=self.ramp_rate*5)
+        MDAC_ch.block()
 
         # trigger AWG and start the MDAC ramp ASAP
         # this order combined with ~10 ms pre-wait gives
@@ -327,7 +349,8 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
     def fn_stop(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
 
-        MDAC_ch.voltage(self.V_start)
+        MDAC_ch.ramp(self.V_start, ramp_rate=self.ramp_rate*5)
+        MDAC_ch.block()
         self.AWG.stop()
 
     def do_acquisition(self):
@@ -337,12 +360,7 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
         return data
 
     def reshape(self, data):
-        reshaped = []
-        for i in range(8):
-            d = data[i,:self.pixels()]
-            reshaped.append(d)
-
-        return np.array(reshaped)
+        return data[:,:self.pixels()]
 
 #################################################################
 ######################## 1D AWG rasterer ########################
@@ -383,6 +401,7 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
             - AWG_Vpp
             - AWG parameters
             Executing 4 is NOT required if you change:
+            - MIDAS_channels
             - Midas channel parameters
     """
 
@@ -513,7 +532,8 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
     def prepare_MIDAS(self):
         self.MIDAS.sw_mode('single_point')
         self.MIDAS.single_point_num_avgs(self.samples_per_point())
-        self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition())
+        # adding +1 [WORKAROUND]
+        self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition() + 1)
 
     def fn_start(self):
         # trigger AWG
@@ -526,7 +546,8 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
         data = self.MIDAS.capture_2d_trace(
                             fn_start=self.fn_start,
                             fn_stop=self.fn_stop)
-        return np.array(data)
+        # removing first buffer [WORKAROUND]
+        return np.array(data[1:])
 
     def reshape(self, data):
         reshaped = []
@@ -641,6 +662,7 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
             Executing 4 is NOT required if you change:
             - MDAC_channel
             - MDAC_Vpp
+            - MIDAS_channels
             - Midas channel parameters
     """
 
@@ -801,7 +823,9 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
     def prepare_MIDAS(self):
         self.MIDAS.sw_mode('single_point')
         self.MIDAS.single_point_num_avgs(self.samples_per_point())
-        self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition())
+
+        # +1 as a workaround for the Midas bug [WORKAROUND]
+        self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition() + 1)
 
     def fn_start(self):
         # get the MDAC channel
@@ -821,7 +845,8 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
 
         # set the MDAC channel to the initial voltage
         self.V_start = MDAC_ch.voltage()
-        MDAC_ch.voltage(self.V_start - self.MDAC_Vpp()/2)
+        MDAC_ch.ramp(self.V_start - self.MDAC_Vpp()/2, ramp_rate=self.ramp_rate*5)
+        MDAC_ch.block()
 
         # trigger AWG and start the MDAC ramp ASAP
         # this order combined with ~10 ms pre-wait gives
@@ -832,14 +857,17 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
     def fn_stop(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
 
-        MDAC_ch.voltage(self.V_start)
+        MDAC_ch.ramp(self.V_start, ramp_rate=self.ramp_rate*5)
+        MDAC_ch.block()
         self.AWG.stop()
 
     def do_acquisition(self):
         data = self.MIDAS.capture_2d_trace(
                             fn_start=self.fn_start,
                             fn_stop=self.fn_stop)
-        return np.array(data)
+
+        # removing first buffer [WORKAROUND]
+        return np.array(data[1:])
 
     def reshape(self, data):
         reshaped = []
@@ -896,7 +924,8 @@ def single_sawtooth_many_triggers(AWG,
                                 dur=rampTime)
 
     pointTime = rampTime/triggersPerRamp
-    sawtooth_blueprint.marker1 = [(pointTime*i, 250e-9) for i in range(triggersPerRamp)]
+    sawtooth_blueprint.marker1 = [(pointTime*i, 150e-9) for i in range(triggersPerRamp)]
+    sawtooth_blueprint.marker2 = [(pointTime*i, 150e-9) for i in range(triggersPerRamp)]
 
     sawtooth_element = bb.Element()
     sawtooth_element.addBluePrint(ch, sawtooth_blueprint)
