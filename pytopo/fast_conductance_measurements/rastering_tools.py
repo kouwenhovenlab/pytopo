@@ -81,7 +81,7 @@ class MidasMdacAwgParentRasterer(Instrument):
         self.add_parameter('midas_buffer_flushing_time',
                         set_cmd=None,
                         initial_value=1e-3,
-                        vals=Numbers(10e-6, 10e-3),
+                        vals=Numbers(10e-6, 100e-3),
                         docstring="Additional waiting time to let"
                         " the Midas flush the buffer"
                         " and get ready for more triggers")
@@ -381,6 +381,8 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
             >>> rFast.AWG_Vpp(0.1)
             >>> rFast.samples_per_pixel(512)
             >>> rFast.pixels(128)
+            >>> rFast.midas_buffer_flushing_time(0.01)
+                # long buffer flushing time needed at this point
         4. Run routines to automatically configure AWG and Midas:
             >>> rFast.prepare_AWG()
             >>> rFast.AWG_channels_on()
@@ -535,8 +537,7 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
     def prepare_MIDAS(self):
         self.MIDAS.sw_mode('single_point')
         self.MIDAS.single_point_num_avgs(self.samples_per_point())
-        # adding +1 [WORKAROUND]
-        self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition() + 1)
+        self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition())
 
     def fn_start(self):
         # trigger AWG
@@ -546,11 +547,18 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
         self.AWG.stop()
 
     def do_acquisition(self):
-        data = self.MIDAS.capture_2d_trace(
-                            fn_start=self.fn_start,
-                            fn_stop=self.fn_stop)
-        # removing first buffer [WORKAROUND]
-        return np.array(data[1:])
+        if self.buffers_per_acquisition() == 1:
+            data = [self.MIDAS.capture_1d_trace(
+                                    fn_start=self.fn_start,
+                                    fn_stop=self.fn_stop)]
+        else:
+            data = [self.MIDAS.capture_1d_trace(
+                                    fn_start=self.fn_start)]
+            for _ in range(self.buffers_per_acquisition()-2):
+                data.append(self.MIDAS.capture_1d_trace())
+            data.append(self.MIDAS.capture_1d_trace(
+                                    fn_stop=self.fn_stop))
+        return np.array(data)
 
     def reshape(self, data):
         reshaped = []
@@ -565,7 +573,7 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
 
         return np.array(reshaped)
 
-########## Testing 1D fast rasterer with repeated capture_1d_trace ##########
+########## Testing 1D fast rasterer with capture_2d_trace ##########
 
 class MidasMdacAwg1DFastRasterer_test(MidasMdacAwg1DFastRasterer):
 
@@ -575,19 +583,18 @@ class MidasMdacAwg1DFastRasterer_test(MidasMdacAwg1DFastRasterer):
                 MIDAS_name, MDAC_name, AWG_name,
                 **kwargs)
 
+    def prepare_MIDAS(self):
+        self.MIDAS.sw_mode('single_point')
+        self.MIDAS.single_point_num_avgs(self.samples_per_point())
+        # adding +1 [WORKAROUND]
+        self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition() + 1)
+
     def do_acquisition(self):
-        if self.buffers_per_acquisition() == 1:
-            data = [self.MIDAS.capture_1d_trace(
-                                    fn_start=self.fn_start,
-                                    fn_stop=self.fn_stop)]
-        else:
-            data = [self.MIDAS.capture_1d_trace(
-                                    fn_start=self.fn_start)]
-            for _ in range(self.buffers_per_acquisition()-2):
-                data.append()
-            data.append(self.MIDAS.capture_1d_trace(
-                                    fn_stop=self.fn_stop))
-        return data
+        data = self.MIDAS.capture_2d_trace(
+                            fn_start=self.fn_start,
+                            fn_stop=self.fn_stop)
+        # removing first buffer [WORKAROUND]
+        return np.array(data[1:])
 
 #################################################################
 ########################## 2D rasterer ##########################
@@ -928,10 +935,10 @@ class MidasMdacAwg2DRasterer_test(MidasMdacAwg2DRasterer):
             data = [self.MIDAS.capture_1d_trace(
                                     fn_start=self.fn_start)]
             for _ in range(self.buffers_per_acquisition()-2):
-                data.append()
+                data.append(self.MIDAS.capture_1d_trace())
             data.append(self.MIDAS.capture_1d_trace(
                                     fn_stop=self.fn_stop))
-        return data
+        return np.array(data)
 
 ######################################################################
 ########################## helper functions ##########################
