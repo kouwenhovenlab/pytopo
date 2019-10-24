@@ -10,7 +10,10 @@ import time
 
 """
 Known issues:
-1. capture_2d_trace moves returns the num_sweeps_2d-1 first traces from
+1. capture_2d_trace was not intended to be used with single_point mode. It kind-of
+    works but with a number of bugs. In some situations it may still be most efficient
+    way of measuring, even if it fails sometimes. 
+    e.g. capture_2d_trace moves returns the num_sweeps_2d-1 first traces from
     the current acquisition and a last trace from the frevious acquisition.
     Firmware version: midas_release_v1_03_085.hex
 Search for WORKAROUND for places when the tweaks were made to work around
@@ -562,6 +565,29 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
 
         return np.array(reshaped)
 
+########## Testing 1D fast rasterer with repeated capture_1d_trace ##########
+
+class MidasMdacAwg1DFastRasterer_test(MidasMdacAwg1DFastRasterer):
+
+    def __init__(self, name, MIDAS_name, MDAC_name, AWG_name, **kwargs):
+
+        super().__init__(name,
+                MIDAS_name, MDAC_name, AWG_name,
+                **kwargs)
+
+    def do_acquisition(self):
+        if self.buffers_per_acquisition() == 1:
+            data = [self.MIDAS.capture_1d_trace(
+                                    fn_start=self.fn_start,
+                                    fn_stop=self.fn_stop)]
+        else:
+            data = [self.MIDAS.capture_1d_trace(
+                                    fn_start=self.fn_start)]
+            for _ in range(self.buffers_per_acquisition()-2):
+                data.append()
+            data.append(self.MIDAS.capture_1d_trace(
+                                    fn_stop=self.fn_stop))
+        return data
 
 #################################################################
 ########################## 2D rasterer ##########################
@@ -882,6 +908,30 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
             reshaped.append(avg)
 
         return np.array(reshaped)
+
+########## Testing 2D rasterer with repeated capture_1d_trace ##########
+
+class MidasMdacAwg2DRasterer_test(MidasMdacAwg2DRasterer):
+
+    def __init__(self, name, MIDAS_name, MDAC_name, AWG_name, **kwargs):
+
+        super().__init__(name,
+                MIDAS_name, MDAC_name, AWG_name,
+                **kwargs)
+
+    def do_acquisition(self):
+        if self.buffers_per_acquisition() == 1:
+            data = [self.MIDAS.capture_1d_trace(
+                                    fn_start=self.fn_start,
+                                    fn_stop=self.fn_stop)]
+        else:
+            data = [self.MIDAS.capture_1d_trace(
+                                    fn_start=self.fn_start)]
+            for _ in range(self.buffers_per_acquisition()-2):
+                data.append()
+            data.append(self.MIDAS.capture_1d_trace(
+                                    fn_stop=self.fn_stop))
+        return data
 
 ######################################################################
 ########################## helper functions ##########################
