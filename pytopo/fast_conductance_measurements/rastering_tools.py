@@ -15,6 +15,9 @@ Known issues:
     way of measuring, even if it fails sometimes. 
     e.g. capture_2d_trace moves returns the num_sweeps_2d-1 first traces from
     the current acquisition and a last trace from the frevious acquisition.
+    Consequently MidasMdacAwg1DFastRasterer now uses repeated capture_1d_trace
+    and requires midas_buffer_flushing_time > 10 ms
+    Meanwhile MidasMdacAwg1DRasterer often show artifacts.
     Firmware version: midas_release_v1_03_085.hex
 Search for WORKAROUND for places when the tweaks were made to work around
 the issues
@@ -331,6 +334,7 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
     def fn_start(self):
         # get the MDAC channel
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
+        self.V_start = MDAC_ch.voltage()
 
         # calculate measurement time:
         sweep_time = self.pixels()*self.time_per_pixel()
@@ -339,7 +343,6 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
         self.ramp_rate = self.MDAC_Vpp()/sweep_time
 
         # set the MDAC channel to the initial voltage
-        self.V_start = MDAC_ch.voltage()
         MDAC_ch.ramp(self.V_start - self.MDAC_Vpp()/2, ramp_rate=self.ramp_rate*5)
         MDAC_ch.block()
 
@@ -863,6 +866,7 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
     def fn_start(self):
         # get the MDAC channel
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
+        self.V_start = MDAC_ch.voltage()
 
         # calculate measurement time:
         ramps = self.ramps_per_buffer()
@@ -877,7 +881,6 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
         self.ramp_rate = self.MDAC_Vpp()/sweep_time
 
         # set the MDAC channel to the initial voltage
-        self.V_start = MDAC_ch.voltage()
         MDAC_ch.ramp(self.V_start - self.MDAC_Vpp()/2, ramp_rate=self.ramp_rate*5)
         MDAC_ch.block()
 
@@ -939,6 +942,73 @@ class MidasMdacAwg2DRasterer_test(MidasMdacAwg2DRasterer):
             data.append(self.MIDAS.capture_1d_trace(
                                     fn_stop=self.fn_stop))
         return np.array(data)
+
+########## Testing 2D rasterer with single_shot mode ##########
+
+class MidasMdacAwg2DSingleShotRasterer(MidasMdacAwg2DRasterer):
+
+    def __init__(self, name, MIDAS_name, MDAC_name, AWG_name, **kwargs):
+
+        super().__init__(name,
+                MIDAS_name, MDAC_name, AWG_name,
+                **kwargs)
+
+    def _get_ramps_per_buffer(self):
+        return 1
+
+    def _get_buffers_per_acquisition(self):
+        return self.ramps_per_line()*self.lines_per_acquisition()
+
+    def prepare_AWG(self):
+        # use low AWG sampling rate, but not smaller than
+        # minimum 10 MS/s
+        AWG_sampling_rate = max(200/self.ramp_time_fast(), 10e6)
+
+        # generate a sequence to upload to AWG
+        self.sequence = single_sawtooth_many_triggers(self.AWG,
+                            AWG_sampling_rate,
+                            self.AWG_channel(),
+                            self.ramp_time_fast(),
+                            1,
+                            self.midas_buffer_flushing_time(),
+                            self.AWG_Vpp(),
+                            triggersPerFlush=1,
+                            pre_wait=self.pre_wait())
+
+        # upload
+        package = self.sequence.outputForAWGFile()
+        AWGfile = self.AWG.make_awg_file(*package[:])
+
+        self.AWG.send_awg_file('raster',AWGfile)
+        self.AWG.load_awg_file('raster')
+
+        self.AWG.clock_freq(AWG_sampling_rate)
+
+        return self.sequence
+
+    def prepare_MIDAS(self):
+        self.MIDAS.sw_mode('single_shot')
+        self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition())
+
+    def do_acquisition(self):
+        data = self.MIDAS.capture_2d_trace(
+                            fn_start=self.fn_start,
+                            fn_stop=self.fn_stop)
+        return np.array(data)
+
+    def reshape(self, data):
+        reshaped = []
+        for i in range(8):
+            d = data[:,i,:self.samples_per_ramp()]
+            res = np.reshape(d, (self.lines_per_acquisition(),
+                                self.ramps_per_line(),
+                                self.pixels_per_line(),
+                                -1))
+            avg = np.average(res, axis=1)
+            avg = np.average(avg, axis=-1)
+            reshaped.append(avg)
+
+        return np.array(reshaped)
 
 ######################################################################
 ########################## helper functions ##########################
