@@ -21,6 +21,10 @@ Known issues:
     Firmware version: midas_release_v1_03_085.hex
 Search for WORKAROUND for places when the tweaks were made to work around
 the issues
+
+Other comments:
+    1. For simplicity the code allows the resolution and averging to
+        set to values 2^N.
 """
 
 class MidasMdacAwgParentRasterer(Instrument):
@@ -357,6 +361,7 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
 
         MDAC_ch.ramp(self.V_start, ramp_rate=self.ramp_rate*5)
         MDAC_ch.block()
+        MDAC_ch.voltage(self.V_start)
         self.AWG.stop()
 
     def do_acquisition(self):
@@ -895,6 +900,7 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
 
         MDAC_ch.ramp(self.V_start, ramp_rate=self.ramp_rate*5)
         MDAC_ch.block()
+        MDAC_ch.voltage(self.V_start)
         self.AWG.stop()
 
     def do_acquisition(self):
