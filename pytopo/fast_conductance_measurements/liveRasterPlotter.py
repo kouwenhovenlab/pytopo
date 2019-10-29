@@ -50,8 +50,8 @@ class liveRasterPlotter():
             # create empty plots
             plot_dict['plot'] = QtPlot(window_title=plot_dict['name'],
                         figsize=(450, 300),
-                        fig_x_position=(i%4)*0.25,
-                        fig_y_position=int(i/4)*0.33)
+                        fig_x_position=int(i/3)*0.25,
+                        fig_y_position=(i%3)*0.315)
 
             plot_dict['plot'].subplots[0].setTitle(plot_dict['name'],
                             size='7pt',color='000000')
@@ -181,7 +181,7 @@ class liveRasterPlotter_GUI(liveRasterPlotter, Instrument):
                         'value')
 
         self.MDAC_resolution_select = ipw.Dropdown(
-                        options=[16,32,64,128],
+                        options=[16,32,64,128,256,512,1024,2048],
                         value=self.rasterer.lines_per_acquisition(),
                         description='Resolution:')
         self.MDAC_resolution_select.observe(
@@ -195,8 +195,8 @@ class liveRasterPlotter_GUI(liveRasterPlotter, Instrument):
         ####################### MIDAS widgets #######################
 
         self.averaging_select = ipw.Dropdown(
-                        options=[16,32,64,128,256,512,1024,2048],
-                        value=64,
+                        options=[4,8,16,32,64,128,256,512,1024,2048],
+                        value=self.rasterer.samples_per_pixel(),
                         description='Avg:')
         self.averaging_select.observe(
                         lambda change: self.rasterer.samples_per_pixel(change['new']),

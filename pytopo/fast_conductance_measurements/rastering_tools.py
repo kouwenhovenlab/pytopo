@@ -19,6 +19,9 @@ Known issues:
     and requires midas_buffer_flushing_time > 10 ms
     Meanwhile MidasMdacAwg1DRasterer often show artifacts.
     Firmware version: midas_release_v1_03_085.hex
+2. Related to previous (probably). Max samples per pixel for 2D raster
+    is 128. I think it is because of some data offset by 128 points
+    which you start seeing when numper of triggers per ramp exceeds 128.
 Search for WORKAROUND for places when the tweaks were made to work around
 the issues
 
@@ -187,6 +190,7 @@ class MidasMdacAwgParentRasterer(Instrument):
         self.arm_for_acquisition()
         time.sleep(1e-3)
         data = self.do_acquisition()
+        self.data_raw = data
         # return data
         data = self.reshape(data)
         # pick selected MIDAS channels
@@ -1057,8 +1061,10 @@ def single_sawtooth_many_triggers(AWG,
                                 dur=rampTime)
 
     pointTime = rampTime/triggersPerRamp
-    sawtooth_blueprint.marker1 = [(pointTime*i, 150e-9) for i in range(triggersPerRamp)]
-    sawtooth_blueprint.marker2 = [(pointTime*i, 150e-9) for i in range(triggersPerRamp)]
+    sawtooth_blueprint.marker1 = [(pointTime*i, 200e-9) for i in range(triggersPerRamp)]
+    sawtooth_blueprint.marker2 = [(pointTime*i, 200e-9) for i in range(triggersPerRamp)]
+
+    print(len(sawtooth_blueprint.marker1))
 
     sawtooth_element = bb.Element()
     sawtooth_element.addBluePrint(ch, sawtooth_blueprint)
