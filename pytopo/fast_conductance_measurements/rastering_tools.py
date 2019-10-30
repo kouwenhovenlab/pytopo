@@ -64,8 +64,14 @@ class MidasMdacAwgParentRasterer(Instrument):
                             initial_value=1,
                             vals=Ints(min_value=1,max_value=4),
                             docstring="Channel of AWG used to apply"
-                            " a sawtooth. Marker 1 of this channel is used"
-                            " as a trigger for Midas.")
+                            " a sawtooth")
+
+        self.add_parameter('AWG_trigger_channel',
+                            set_cmd=None,
+                            initial_value=1,
+                            vals=Ints(min_value=1,max_value=4),
+                            docstring="Channel of AWG used to apply"
+                            " generate a trigger for Midas.")
 
         self.add_parameter('MIDAS_channels',
                             set_cmd=None,
@@ -322,6 +328,7 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
                             1,
                             self.midas_buffer_flushing_time(),
                             0,
+                            trigger_ch=self.AWG_trigger_channel(),
                             pre_wait=self.pre_wait())
 
         # upload
@@ -533,6 +540,7 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
                             self.pixels(),
                             self.midas_buffer_flushing_time(),
                             self.AWG_Vpp(),
+                            trigger_ch=self.AWG_trigger_channel(),
                             pre_wait=self.pre_wait())
 
         # upload
@@ -852,6 +860,7 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
                             self.pixels_per_line(),
                             self.midas_buffer_flushing_time(),
                             self.AWG_Vpp(),
+                            trigger_ch=self.AWG_trigger_channel(),
                             pre_wait=self.pre_wait())
 
         # upload
@@ -983,6 +992,7 @@ class MidasMdacAwg2DSingleShotRasterer(MidasMdacAwg2DRasterer):
                             self.midas_buffer_flushing_time(),
                             self.AWG_Vpp(),
                             triggersPerFlush=1,
+                            trigger_ch=self.AWG_trigger_channel(),
                             pre_wait=self.pre_wait())
 
         # upload
@@ -1031,6 +1041,7 @@ def single_sawtooth_many_triggers(AWG,
                     triggersPerRamp,
                     flushingTime,
                     Vpp,
+                    trigger_ch=1,
                     triggersPerFlush=2048,
                     pre_wait=None):
     
@@ -1049,7 +1060,10 @@ def single_sawtooth_many_triggers(AWG,
                                     name='wait',
                                     dur=pre_wait)
     wait_element = bb.Element()
+    if ch != trigger_ch:
+        wait_element.addBluePrint(trigger_ch, wait_blueprint)
     wait_element.addBluePrint(ch, wait_blueprint)
+    
 
     wait_element.validateDurations()
 
@@ -1060,13 +1074,23 @@ def single_sawtooth_many_triggers(AWG,
                                 name='ramp',
                                 dur=rampTime)
 
-    pointTime = rampTime/triggersPerRamp
-    sawtooth_blueprint.marker1 = [(pointTime*i, 200e-9) for i in range(triggersPerRamp)]
-    sawtooth_blueprint.marker2 = [(pointTime*i, 200e-9) for i in range(triggersPerRamp)]
-
-    print(len(sawtooth_blueprint.marker1))
+    if ch == trigger_ch:
+        pointTime = rampTime/triggersPerRamp
+        sawtooth_blueprint.marker1 = [(pointTime*i, 200e-9) for i in range(triggersPerRamp)]
+        sawtooth_blueprint.marker2 = [(pointTime*i, 200e-9) for i in range(triggersPerRamp)]
+    else:
+        sawtooth_trigger_blueprint = bb.BluePrint()
+        sawtooth_trigger_blueprint.setSR(sampling_rate)
+        sawtooth_trigger_blueprint.insertSegment(-1, ramp, (0, 0),
+                                    name='ramp_trig',
+                                    dur=rampTime)
+        pointTime = rampTime/triggersPerRamp
+        sawtooth_trigger_blueprint.marker1 = [(pointTime*i, 200e-9) for i in range(triggersPerRamp)]
+        sawtooth_trigger_blueprint.marker2 = [(pointTime*i, 200e-9) for i in range(triggersPerRamp)]
 
     sawtooth_element = bb.Element()
+    if ch != trigger_ch:
+        sawtooth_element.addBluePrint(trigger_ch, sawtooth_trigger_blueprint)
     sawtooth_element.addBluePrint(ch, sawtooth_blueprint)
 
     sawtooth_element.validateDurations()
@@ -1078,9 +1102,13 @@ def single_sawtooth_many_triggers(AWG,
                                     name='wait',
                                     dur=flushingTime)
     flush_element = bb.Element()
+    if ch != trigger_ch:
+        flush_element.addBluePrint(trigger_ch, flush_blueprint)
     flush_element.addBluePrint(ch, flush_blueprint)
 
     flush_element.validateDurations()
+
+
 
     # make a sequence
     # wait - sawtooth (repeat) - flush - go to sawtooth
@@ -1104,6 +1132,11 @@ def single_sawtooth_many_triggers(AWG,
     ch_amp = AWG['ch'+str(ch)+'_amp']()
     sequence.setChannelAmplitude(ch, ch_amp)
     sequence.setChannelOffset(ch, 0)
+
+    if ch != trigger_ch:
+        ch_amp = AWG['ch'+str(trigger_ch)+'_amp']()
+        sequence.setChannelAmplitude(trigger_ch, ch_amp)
+        sequence.setChannelOffset(trigger_ch, 0)
 
     sequence.setSR(sampling_rate)
 

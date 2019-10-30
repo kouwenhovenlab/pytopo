@@ -288,7 +288,6 @@ class liveRasterPlotter_GUI(liveRasterPlotter, Instrument):
             super().measure()
         except Exception as e:
             self.notification_area.value = str(e)
-            raise
         t_stop = time.time()
         t_meas = np.round(t_stop-t_start,2)
         self.notification_area.value = 'Msmt time: '+str(t_meas)+' s'
