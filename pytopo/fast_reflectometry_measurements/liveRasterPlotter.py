@@ -23,55 +23,69 @@ class liveRasterPlotter():
         self.new_plots()
 
     def kill_plots(self):
-        for k,v in self.plots.items():
-            v['plot'].win.close()
+        for ch_dict in self.plots.values():
+            for plot_dict in ch_dict.values():
+                plot_dict['plot'].win.close()
         self.plots = {}
 
     def new_plots(self):
         # create new plots in a loop
         # for now only one plot per channel,
         # only for I quadrature
-        for i, ch in enumerate(self.rasterer.MIDAS_channels()):
-            plot_dict = {}
+        i = 0
+        # for i, ch in enumerate(self.rasterer.MIDAS_channels()):
+        for ch, quadratures in self.rasterer.MIDAS_channel_specs().items():
+            self.plots[ch] = {}
+            for q in quadratures:
+                plot_dict = {}
 
-            # make data containers
-            plot_dict['xvals'] = np.arange(0, self.rasterer.pixels_per_line())
-            plot_dict['yvals'] = np.arange(0, self.rasterer.lines_per_acquisition())
+                # make data containers
+                plot_dict['xvals'] = np.arange(0, self.rasterer.pixels_per_line())
+                plot_dict['yvals'] = np.arange(0, self.rasterer.lines_per_acquisition())
 
-            plot_dict['zvals'] = np.ones([self.rasterer.lines_per_acquisition(),
-                                self.rasterer.pixels_per_line()])
-            plot_dict['zvals'][:,:] = np.NaN
+                plot_dict['zvals'] = np.ones([self.rasterer.lines_per_acquisition(),
+                                    self.rasterer.pixels_per_line()])
+                plot_dict['zvals'][:,:] = np.NaN
 
-            # create text for labels
-            xlabel = 'AWG channel '+str(self.rasterer.AWG_channel())
-            ylabel = 'MDAC channel '+str(self.rasterer.AWG_channel())
-            plot_dict['name'] = 'MIDAS channel '+str(ch)
+                # create text for labels
+                xlabel = 'AWG channel '+str(self.rasterer.AWG_channel())
+                ylabel = 'MDAC channel '+str(self.rasterer.AWG_channel())
+                plot_dict['name'] = 'MIDAS channel '+str(ch)+'; '+str(q)
 
-            # create empty plots
-            plot_dict['plot'] = QtPlot(window_title=plot_dict['name'],
-                        figsize=(450, 300),
-                        fig_x_position=int(i/3)*0.25,
-                        fig_y_position=(i%3)*0.315)
+                # create empty plots
+                plot_dict['plot'] = QtPlot(window_title=plot_dict['name'],
+                            figsize=(450, 300),
+                            fig_x_position=int(i/3)*0.25,
+                            fig_y_position=(i%3)*0.315)
 
-            plot_dict['plot'].subplots[0].setTitle(plot_dict['name'],
-                            size='7pt',color='000000')
+                plot_dict['plot'].subplots[0].setTitle(plot_dict['name'],
+                                size='7pt',color='000000')
 
-            # add data to plot            
-            plot_dict['plot'].add(x=plot_dict['xvals'],
-                                     y=plot_dict['yvals'],
-                                     z=plot_dict['zvals'],
-                                     xlabel=xlabel,
-                                     xunit='arb. u.',
-                                     ylabel=ylabel,
-                                     yunit='arb. u.',
-                                     zlabel=plot_dict['name'],
-                                     zunit='arb. u.')
+                # add data to plot
+                if q == 'P':
+                    zunit = 'rad'
+                else:
+                    zunit = 'arb. u.'
+                plot_dict['plot'].add(x=plot_dict['xvals'],
+                                         y=plot_dict['yvals'],
+                                         z=plot_dict['zvals'],
+                                         xlabel=xlabel,
+                                         xunit='arb. u.',
+                                         ylabel=ylabel,
+                                         yunit='arb. u.',
+                                         zlabel=plot_dict['name'],
+                                         zunit=zunit)
 
-            self.plots[ch] = plot_dict
+                self.plots[ch][q] = plot_dict
+
+                i += 1
 
     def update_plots(self):
-        for k, plot in self.plots.items():
-            plot['plot'].update_plot()
+        # for k, plot in self.plots.items():
+        #     plot['plot'].update_plot()
+        for ch, quadratures in self.rasterer.MIDAS_channel_specs().items():
+            for q in quadratures:
+                self.plots[ch][q]['plot'].update_plot()
 
     def prepare_instruments(self):
         self.rasterer.prepare_AWG()
@@ -82,8 +96,11 @@ class liveRasterPlotter():
     def measure(self):
         data = self.rasterer.arm_acquire_reshape()
 
-        for d, ch in zip(data, self.rasterer.MIDAS_channels()):
-            self.plots[ch]['zvals'][:,:] = np.real(d[:,:])
+        i = 0
+        for ch, quadratures in self.rasterer.MIDAS_channel_specs().items():
+            for q in quadratures:
+                self.plots[ch][q]['zvals'][:,:] = data[i][:,:]
+                i += 1
 
         self.update_plots()
 
@@ -202,34 +219,34 @@ class liveRasterPlotter_GUI(liveRasterPlotter, Instrument):
                         lambda change: self.rasterer.samples_per_pixel(change['new']),
                         'value')
 
-        self.MIDAS_trigger_delay_select = ipw.BoundedIntText(
-                        value=self.rasterer.MIDAS.trigger_delay(),
-                        min=0, max=18e3,
-                        step=1,
-                        description='Trig. delay:',
-                        continuous_update=False)
-        self.MIDAS_trigger_delay_select.observe(
-                        lambda change: self.rasterer.MIDAS.trigger_delay(change['new']),
-                        'value')
+        # self.MIDAS_trigger_delay_select = ipw.BoundedIntText(
+        #                 value=self.rasterer.MIDAS.trigger_delay(),
+        #                 min=0, max=18e3,
+        #                 step=1,
+        #                 description='Trig. delay:',
+        #                 continuous_update=False)
+        # self.MIDAS_trigger_delay_select.observe(
+        #                 lambda change: self.rasterer.MIDAS.trigger_delay(change['new']),
+        #                 'value')
 
-        self.MIDAS_channel_selectors = []
-        for i in range(1,8):
-            checkbox = ipw.Checkbox(
-                        value=(i==1),
-                        description='Ch '+str(i),
-                        continuous_update=False)
-            checkbox.observe(
-                        self.set_MIDAS_channels,
-                        'value')
-            self.MIDAS_channel_selectors.append(checkbox)
+        # self.MIDAS_channel_selectors = []
+        # for i in range(1,8):
+        #     checkbox = ipw.Checkbox(
+        #                 value=(i==1),
+        #                 description='Ch '+str(i),
+        #                 continuous_update=False)
+        #     checkbox.observe(
+        #                 self.set_MIDAS_channels,
+        #                 'value')
+        #     self.MIDAS_channel_selectors.append(checkbox)
 
 
-        MIDAS_channel_box = ipw.GridBox(self.MIDAS_channel_selectors,
-                        layout=ipw.Layout(grid_template_columns="repeat(2, 90px)"))
+        # MIDAS_channel_box = ipw.GridBox(self.MIDAS_channel_selectors,
+        #                 layout=ipw.Layout(grid_template_columns="repeat(4, 60px)"))
 
-        MIDAS_layout = ipw.VBox([self.averaging_select,
-                            self.MIDAS_trigger_delay_select,
-                            MIDAS_channel_box])
+        MIDAS_layout = ipw.VBox([self.averaging_select])
+                            # self.MIDAS_trigger_delay_select])
+                            # MIDAS_channel_box])
 
         ####################### Buttons #######################
 

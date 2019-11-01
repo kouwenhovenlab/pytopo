@@ -73,11 +73,14 @@ class MidasMdacAwgParentRasterer(Instrument):
                             docstring="Channel of AWG used to apply"
                             " generate a trigger for Midas.")
 
-        self.add_parameter('MIDAS_channels',
+        self.add_parameter('MIDAS_channel_specs',
                             set_cmd=None,
-                            initial_value=[1],
-                            vals=Lists(elt_validator=Ints(min_value=1,max_value=8)),
-                            docstring="List of Midas channels to return")
+                            initial_value={1:'IQ'},
+                            docstring="Dictionary specyfying quantities to"
+                            " measure. Keys are the cjannel numbers (int)."
+                            " Valuses are strings, up to 4 letters from"
+                            " the set I, Q, A, P which stand for"
+                            " (I, Q, Amplitude or Phase).")
 
         self.add_parameter('samples_per_pixel',
                         set_cmd=None,
@@ -110,6 +113,15 @@ class MidasMdacAwgParentRasterer(Instrument):
                             " applied sequence of sawtooths. It's purpose is to"
                             " ensure that MDAC sweep starts synchronously with"
                             " the Midas acquisition.")
+
+        # only gettable
+        self.add_parameter('MIDAS_channels',
+                            get_cmd=self._get_MIDAS_channels,
+                            docstring="List of Midas channels to return")
+
+    ################### Get functions ###################
+    def _get_MIDAS_channels(self):
+        return list(self.MIDAS_channel_specs().keys())
 
     ################### Conversion functions ###################
 
@@ -201,8 +213,11 @@ class MidasMdacAwgParentRasterer(Instrument):
         data = self.reshape(data)
         # pick selected MIDAS channels
         self.data = []
-        for ch in self.MIDAS_channels():
-            self.data.append(data[ch-1])
+        for ch, quadratures in self.MIDAS_channel_specs().items():
+            d = data[ch-1]
+            phase_offset = self.MIDAS.channels[ch-1].phase_offset()
+            for q in quadratures:
+                self.data.append(get_quadrature(d, q, phase_offset))
         return np.array(self.data)
 
 ##################################################################
@@ -345,6 +360,8 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
     def prepare_MIDAS(self):
         self.MIDAS.sw_mode('single_point')
         self.MIDAS.single_point_num_avgs(self.samples_per_pixel())
+        self.MIDAS.calibrate_latency()
+        self.MIDAS.trigger_delay(self.MIDAS.trigger_delay()+60)
 
     def fn_start(self):
         # get the MDAC channel
@@ -558,6 +575,8 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
         self.MIDAS.sw_mode('single_point')
         self.MIDAS.single_point_num_avgs(self.samples_per_point())
         self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition())
+        self.MIDAS.calibrate_latency()
+        self.MIDAS.trigger_delay(self.MIDAS.trigger_delay()+64)
 
     def fn_start(self):
         # trigger AWG
@@ -608,6 +627,8 @@ class MidasMdacAwg1DFastRasterer_test(MidasMdacAwg1DFastRasterer):
         self.MIDAS.single_point_num_avgs(self.samples_per_point())
         # adding +1 [WORKAROUND]
         self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition() + 1)
+        self.MIDAS.calibrate_latency()
+        self.MIDAS.trigger_delay(self.MIDAS.trigger_delay()+60)
 
     def do_acquisition(self):
         data = self.MIDAS.capture_2d_trace(
@@ -880,6 +901,8 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
 
         # +1 as a workaround for the Midas bug [WORKAROUND]
         self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition() + 1)
+        self.MIDAS.calibrate_latency()
+        self.MIDAS.trigger_delay(self.MIDAS.trigger_delay()+60)
 
     def fn_start(self):
         # get the MDAC channel
@@ -1009,6 +1032,8 @@ class MidasMdacAwg2DSingleShotRasterer(MidasMdacAwg2DRasterer):
     def prepare_MIDAS(self):
         self.MIDAS.sw_mode('single_shot')
         self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition())
+        self.MIDAS.calibrate_latency()
+        self.MIDAS.trigger_delay(self.MIDAS.trigger_delay()+60)
 
     def do_acquisition(self):
         data = self.MIDAS.capture_2d_trace(
@@ -1141,3 +1166,21 @@ def single_sawtooth_many_triggers(AWG,
     sequence.setSR(sampling_rate)
 
     return sequence
+
+
+def get_quadrature(d, q, phase_offset=0):
+    rot_vec = complex(np.cos(phase_offset), -np.sin(phase_offset))
+    if q=='A':
+        return np.abs(d)
+    elif q=='P':
+        phases = np.angle(d) - phase_offset
+        return (phases + np.pi) % (2*np.pi) - np.pi
+    elif q=='I':
+        return np.real(d*rot_vec)
+    elif q=='Q':
+        return np.imag(d*rot_vec)
+    else:
+        ValueError("Quadrature must be specified as I, Q, A or P")
+
+
+
