@@ -7,7 +7,7 @@ import numpy as np
 
 import time
 
-class liveRasterPlotter():
+class LiveRasterPlotter():
 
     def __init__(self, rasterer, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -106,7 +106,7 @@ class liveRasterPlotter():
 
 ############### plotter with GUI ###############
 
-class liveRasterPlotter_GUI(liveRasterPlotter, Instrument):
+class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
     '''
     How to use:
         - Create a MidasMdacAwg2DRasterer.

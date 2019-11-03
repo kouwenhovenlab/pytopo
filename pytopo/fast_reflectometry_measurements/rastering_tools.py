@@ -138,7 +138,7 @@ class MidasMdacAwgParentRasterer(Instrument):
 
     def prepare_AWG(self):
         """
-        This function prepares and uploades a needed sequence
+        Orepares and uploades a needed sequence
         to Tektronix 5014.
         Should be implemented in a subclass.
         """
@@ -147,7 +147,7 @@ class MidasMdacAwgParentRasterer(Instrument):
 
     def prepare_MIDAS(self):
         """
-        This function sets up the MIDAS to do the acquisition.
+        Sets up the MIDAS to do the acquisition.
         Should be implemented in a subclass.
         """
         raise NotImplementedError(
@@ -155,7 +155,7 @@ class MidasMdacAwgParentRasterer(Instrument):
 
     def fn_start(self):
         """
-        This function is will be exectued by
+        This function will be exectued by
         MIDAS.captire_[...] just before the acquisition.
         Should be implemented in a subclass.
         """
@@ -164,7 +164,7 @@ class MidasMdacAwgParentRasterer(Instrument):
 
     def fn_stop(self):
         """
-        This function is will be exectued by
+        This function will be exectued by
         MIDAS.captire_[...] just after the acquisition.
         Should be implemented in a subclass.
         """
@@ -173,7 +173,7 @@ class MidasMdacAwgParentRasterer(Instrument):
 
     def do_acquisition(self):
         """
-        This function executes a MIDAS capture method
+        Executes a MIDAS capture method
         and returns an ndarray with the data.
         Should be implemented in a subclass.
         """
@@ -182,8 +182,17 @@ class MidasMdacAwgParentRasterer(Instrument):
 
     def reshape(self):
         """
-        This function reshapes and performs required averaging
+        Reshapes and performs required averaging
         of the data returned by do_acquisition()
+        Should be implemented in a subclass.
+        """
+        raise NotImplementedError(
+            'This method should be implemented in a subclass')
+
+    def get_measurement_range(self):
+        """
+        Returns arrays with voltage ranges
+        corresponding to the data.
         Should be implemented in a subclass.
         """
         raise NotImplementedError(
@@ -381,8 +390,8 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
         # trigger AWG and start the MDAC ramp ASAP
         # this order combined with ~10 ms pre-wait gives
         # aynchronized start of the sweep and data acquisition
-        self.AWG.force_trigger()
         MDAC_ch.ramp(self.V_start + self.MDAC_Vpp()/2, ramp_rate=self.ramp_rate)
+        self.AWG.force_trigger()
 
     def fn_stop(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
@@ -400,6 +409,37 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
 
     def reshape(self, data):
         return data[:,:self.pixels()]
+
+    def get_measurement_range(self):
+        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
+        self.V_start = MDAC_ch.voltage()
+        return np.linspace(self.V_start - self.MDAC_Vpp()/2,
+                           self.V_start + self.MDAC_Vpp()/2,
+                           self.pixels())
+
+class MidasMdacAwg1DSlowRasterer_test(MidasMdacAwg1DSlowRasterer):
+    def arm_for_acquisition(self):
+        self.AWG.stop()
+        
+        # get the MDAC channel
+        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
+        self.V_start = MDAC_ch.voltage()
+
+        # calculate measurement time:
+        sweep_time = self.pixels()*self.time_per_pixel()
+
+        # calculate the rate of the MDAC sweep
+        self.ramp_rate = self.MDAC_Vpp()/sweep_time
+
+        MDAC_ch.awg_triangle(1/sweep_time/2, self.MDAC_Vpp(), offset=self.V_start)
+        self.MDAC.stop()
+        self.MDAC.sync()
+
+        self.AWG.start()
+
+    def fn_start(self):
+        self.MDAC.run()
+
 
 #################################################################
 ######################## 1D AWG rasterer ########################
@@ -611,6 +651,11 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
             reshaped.append(avg)
 
         return np.array(reshaped)
+
+    def get_measurement_range(self):
+        return np.linspace(-self.AWG_Vpp()/2,
+                           self.AWG_Vpp()/2,
+                           self.pixels())
 
 ########## Testing 1D fast rasterer with capture_2d_trace ##########
 
@@ -960,6 +1005,19 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
             reshaped.append(avg)
 
         return np.array(reshaped)
+
+    def get_measurement_range(self):
+        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
+        self.V_start = MDAC_ch.voltage()
+        MDAC_range = np.linspace(self.V_start - self.MDAC_Vpp()/2,
+                           self.V_start + self.MDAC_Vpp()/2,
+                           self.pixels())
+
+        AWG_range =  np.linspace(-self.AWG_Vpp()/2,
+                                 self.AWG_Vpp()/2,
+                                 self.pixels())
+
+        return AWG_range, MDAC_range
 
 ########## Testing 2D rasterer with repeated capture_1d_trace ##########
 
