@@ -236,18 +236,48 @@ class MidasMdacAwgParentRasterer(Instrument):
 class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
     def __init__(self, name, MIDAS_name, MDAC_name, AWG_name, **kwargs):
         """
-        Create a MidasMdacAwgRasterer instance
-
-        Args:
-            name (str): rasterer instrument name
-            MIDAS_name (str): name of the Midas to be used
-            MDAC_name (str): name of the MDAC to be used
-            AWG_name (str): name of the Tektronix 5014 to be used
-            **kwargs: other kwargs passed to Instrument init
-
-        Returns:
-            MidasMdacAwgRasterer
-        """
+    How to use:
+        1. Configure Midas channels
+        2. Create a rasterer object:
+            >>> rSlow = rast.MidasMdacAwg1DSlowRasterer('rSlow',
+                                midas.name, mdac.name, AWG.name)
+        3. Set up the MDAC channel, voltage range, averaging
+            and resolution:
+            >>> rSlow.MDAC_channel(1)
+            >>> rSlow.MDAC_Vpp(0.1)
+            >>> rSlow.samples_per_pixel(512)
+            >>> rSlow.pixels(128)
+        4. Run routines to automatically configure AWG and Midas:
+            >>> rSlow.prepare_AWG()
+            >>> rSlow.AWG_channels_on()
+            >>> rSlow.prepare_MIDAS()
+        5. Measure:
+            >>> data = rSlow.arm_acquire_reshape()
+            After acquisition the MDAC channel voltage is set to
+            the value from the beginning of the measurement.
+        6. "data" is an (8 x pixels) array with the obtained data
+            At this time no scaling of the sweeped axis is provided.
+            The MDAC sweeps the voltage from Vmdac-MDAC_Vpp/2
+            to Vmdac+MDAC_Vpp/2, where Vmdac is the channel setting
+            at the moment arm_acquire_reshape method is executed.
+        7. Investigate the data to verify if the MDAC sweep
+            is synchronized with the AWG. If needed, adjust
+            pre_wait parameter and repeat points 4-6
+        8. Executing 4 between measurements is only required
+            if you changed any of the following parameters:
+            - AWG_channel
+            - samples_per_pixel
+            - midas_retriggering_time
+            - pre_wait
+            - pixels
+            - AWG parameters
+            Executing 4 is NOT required if you change:
+            - MDAC_channel
+            - MDAC_Vpp
+            - MDAC_divider
+            - MIDAS_channels
+            - Midas channel parameters
+    """
 
         super().__init__(name,
                 MIDAS_name, MDAC_name, AWG_name,
@@ -267,6 +297,12 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
                             " MDAC. DC offset is given by the current setting"
                             " of the MDAC channel. After acquisition the channel"
                             " voltage is set back to the initial value.")
+
+        self.add_parameter('MDAC_divider',
+                            set_cmd=None,
+                            initial_value=1,
+                            vals=Numbers(min_value=1),
+                            docstring="Voltage divider to take into account")
 
         self.add_parameter('pixels',
                             set_cmd=None,
@@ -347,6 +383,7 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
     def fn_stop(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
 
+        MDAC_ch.attach_trigger()
         MDAC_ch.ramp(self.V_start, ramp_rate=self.ramp_rate*5)
         MDAC_ch.block()
         MDAC_ch.voltage(self.V_start)
@@ -378,11 +415,13 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
 
         # 0.99/sweep_time frequency is minimally smaller to avoid
         # problems with last pixel in case a few triggers are missed
-        MDAC_ch.awg_sawtooth(0.99/sweep_time, self.MDAC_Vpp(), offset=self.V_start)
+        MDAC_ch.awg_sawtooth(0.99/sweep_time, self.MDAC_Vpp()*self.MDAC_divider(), offset=self.V_start)
         self.MDAC.stop()
         self.MDAC.sync()
 
         self.AWG.start()
+        time.sleep(0.1)
+
 
     def get_measurement_range(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
@@ -1280,7 +1319,6 @@ def single_sawtooth_many_triggers(AWG,
     if ch != trigger_ch:
         wait_element.addBluePrint(trigger_ch, wait_blueprint)
     wait_element.addBluePrint(ch, wait_blueprint)
-    
 
     wait_element.validateDurations()
 
@@ -1329,22 +1367,27 @@ def single_sawtooth_many_triggers(AWG,
 
     # make a sequence
     # wait - sawtooth (repeat) - flush - go to sawtooth
+    elem_num = 1
     sequence = bb.Sequence()
-    sequence.addElement(1, wait_element)
-    sequence.setSequencingTriggerWait(1, 1)
-    sequence.setSequencingNumberOfRepetitions(1,1)
-    sequence.setSequencingGoto(1,0)
 
-    sequence.addElement(2, sawtooth_element)
-    sequence.setSequencingTriggerWait(2, 0)
+    sequence.addElement(elem_num, wait_element)
+    sequence.setSequencingTriggerWait(elem_num, 1)
+    sequence.setSequencingNumberOfRepetitions(elem_num,1)
+    sequence.setSequencingGoto(elem_num,0)
+    elem_num += 1
+
+    sequence.addElement(elem_num, sawtooth_element)
+    sequence.setSequencingTriggerWait(elem_num, 0)
     rampsPerFlush = triggersPerFlush/triggersPerRamp
-    sequence.setSequencingNumberOfRepetitions(2,rampsPerFlush)
-    sequence.setSequencingGoto(2,0)
+    sequence.setSequencingNumberOfRepetitions(elem_num,rampsPerFlush)
+    sequence.setSequencingGoto(elem_num,0)
+    elem_num += 1
 
-    sequence.addElement(3, flush_element)
-    sequence.setSequencingTriggerWait(3, 0)
-    sequence.setSequencingNumberOfRepetitions(3,1)
-    sequence.setSequencingGoto(3,2)
+    sequence.addElement(elem_num, flush_element)
+    sequence.setSequencingTriggerWait(elem_num, 0)
+    sequence.setSequencingNumberOfRepetitions(elem_num,1)
+    sequence.setSequencingGoto(elem_num,2)
+    elem_num += 1
 
     ch_amp = AWG['ch'+str(ch)+'_amp']()
     sequence.setChannelAmplitude(ch, ch_amp)
