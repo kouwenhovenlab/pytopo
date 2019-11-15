@@ -153,6 +153,14 @@ class MidasMdacAwgParentRasterer(Instrument):
         raise NotImplementedError(
             'This method should be implemented in a subclass')
 
+    def prepare_MDAC(self):
+        """
+        Sets up the MDAC to do the acquisition.
+        Should be implemented in a subclass.
+        """
+        raise NotImplementedError(
+            'This method should be implemented in a subclass')
+
     def fn_start(self):
         """
         This function will be exectued by
@@ -208,6 +216,7 @@ class MidasMdacAwgParentRasterer(Instrument):
         self.prepare_AWG()
         self.AWG_channels_on()
         self.prepare_MIDAS()
+        self.prepare_MDAC()
 
     def arm_for_acquisition(self):
         self.AWG.stop()
@@ -377,6 +386,9 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
         self.MIDAS.calibrate_latency()
         self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
 
+    def prepare_MDAC(self):
+        pass
+
     def fn_start(self):
         self.MDAC.run()
 
@@ -420,7 +432,7 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
         self.MDAC.sync()
 
         self.AWG.start()
-        time.sleep(0.1)
+        time.sleep(0.05)
 
 
     def get_measurement_range(self):
@@ -568,6 +580,9 @@ class MidasMdacAwg1DSlowRasterer_legacy(MidasMdacAwgParentRasterer):
         self.MIDAS.single_point_num_avgs(self.samples_per_pixel())
         self.MIDAS.calibrate_latency()
         self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
+
+    def prepare_MDAC(self):
+        pass
 
     def fn_start(self):
         # get the MDAC channel
@@ -790,6 +805,9 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
         self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition())
         self.MIDAS.calibrate_latency()
         self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
+
+    def prepare_MDAC(self):
+        pass
 
     def fn_start(self):
         # trigger AWG
@@ -1122,6 +1140,9 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
         self.MIDAS.calibrate_latency()
         self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
 
+    def prepare_MDAC(self):
+        pass
+
     def fn_start(self):
         # get the MDAC channel
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
@@ -1266,6 +1287,9 @@ class MidasMdacAwg2DSingleShotRasterer(MidasMdacAwg2DRasterer):
         self.MIDAS.calibrate_latency()
         self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
 
+    def prepare_MDAC(self):
+        pass
+        
     def do_acquisition(self):
         data = self.MIDAS.capture_2d_trace(
                             fn_start=self.fn_start,
