@@ -224,8 +224,10 @@ class MidasMdacAwgParentRasterer(Instrument):
 
     def arm_acquire_reshape(self):
         self.arm_for_acquisition()
+
         time.sleep(1e-3)
         data = self.do_acquisition()
+
         self.data_raw = data
         # return data
         data = self.reshape(data)
@@ -387,18 +389,40 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
         self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
 
     def prepare_MDAC(self):
+        # get the MDAC channel
+        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
+        self.V_start = MDAC_ch.voltage()
+
+        MDAC_ch.attach_trigger()
+
+        # calculate measurement time:
+        sweep_time = self.pixels()*self.time_per_pixel()
+
+        # calculate the rate of the MDAC sweep
+        self.ramp_rate = self.MDAC_Vpp()/sweep_time
+
+        # 0.99/sweep_time frequency is minimally smaller to avoid
+        # problems with last pixel in case a few triggers are missed
+        MDAC_ch.awg_sawtooth(0.99/sweep_time, self.MDAC_Vpp()*self.MDAC_divider(), offset=self.V_start)
+        self.MDAC.stop()
+        self.MDAC.sync()
         pass
+
+    def end_MDAC(self, d=None):
+        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
+        MDAC_ch.voltage(self.V_start)
 
     def fn_start(self):
         self.MDAC.run()
 
     def fn_stop(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
+        self.MDAC.stop()
+        self.MDAC.sync()
 
-        MDAC_ch.attach_trigger()
-        MDAC_ch.ramp(self.V_start, ramp_rate=self.ramp_rate*5)
-        MDAC_ch.block()
-        MDAC_ch.voltage(self.V_start)
+        # MDAC_ch.ramp(self.V_start, ramp_rate=self.ramp_rate*5)
+        # MDAC_ch.block()
+        # MDAC_ch.voltage(self.V_start)
         self.AWG.stop()
 
     def do_acquisition(self):
@@ -415,22 +439,6 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
     def arm_for_acquisition(self):
         self.AWG.stop()
         
-        # get the MDAC channel
-        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
-        self.V_start = MDAC_ch.voltage()
-
-        # calculate measurement time:
-        sweep_time = self.pixels()*self.time_per_pixel()
-
-        # calculate the rate of the MDAC sweep
-        self.ramp_rate = self.MDAC_Vpp()/sweep_time
-
-        # 0.99/sweep_time frequency is minimally smaller to avoid
-        # problems with last pixel in case a few triggers are missed
-        MDAC_ch.awg_sawtooth(0.99/sweep_time, self.MDAC_Vpp()*self.MDAC_divider(), offset=self.V_start)
-        self.MDAC.stop()
-        self.MDAC.sync()
-
         self.AWG.start()
         time.sleep(0.05)
 
