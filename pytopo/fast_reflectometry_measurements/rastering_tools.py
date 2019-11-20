@@ -213,10 +213,10 @@ class MidasMdacAwgParentRasterer(Instrument):
         self.AWG.ch4_state(1)
 
     def prepare_for_acquisition(self):
+        self.prepare_MDAC()
         self.prepare_AWG()
         self.AWG_channels_on()
         self.prepare_MIDAS()
-        self.prepare_MDAC()
 
     def arm_for_acquisition(self):
         self.AWG.stop()
@@ -389,6 +389,42 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
         self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
 
     def prepare_MDAC(self):
+        pass
+
+    def end_MDAC(self, d=None):
+        pass
+
+    def fn_start(self):
+        self.MDAC.run()
+
+    def fn_stop(self):
+        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
+        MDAC_ch.voltage(self.V_start)
+        self.MDAC.stop()
+        self.MDAC.sync()
+
+        # MDAC_ch.ramp(self.V_start, ramp_rate=self.ramp_rate*5)
+        # MDAC_ch.block()
+        # MDAC_ch.voltage(self.V_start)
+        self.AWG.stop()
+
+        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
+        MDAC_ch.voltage(self.V_start)
+
+    def do_acquisition(self):
+        data = self.MIDAS.capture_1d_trace(
+                            fn_start=self.fn_start,
+                            fn_stop=self.fn_stop)
+        return data
+
+    def reshape(self, data):
+        res = np.reshape(data, (8,self.pixels(),-1))
+        avg = np.average(res, axis=-1)
+        return avg
+
+    def arm_for_acquisition(self):
+        self.AWG.stop()
+
         # get the MDAC channel
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
         self.V_start = MDAC_ch.voltage()
@@ -406,38 +442,6 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
         MDAC_ch.awg_sawtooth(0.99/sweep_time, self.MDAC_Vpp()*self.MDAC_divider(), offset=self.V_start)
         self.MDAC.stop()
         self.MDAC.sync()
-        pass
-
-    def end_MDAC(self, d=None):
-        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
-        MDAC_ch.voltage(self.V_start)
-
-    def fn_start(self):
-        self.MDAC.run()
-
-    def fn_stop(self):
-        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
-        self.MDAC.stop()
-        self.MDAC.sync()
-
-        # MDAC_ch.ramp(self.V_start, ramp_rate=self.ramp_rate*5)
-        # MDAC_ch.block()
-        # MDAC_ch.voltage(self.V_start)
-        self.AWG.stop()
-
-    def do_acquisition(self):
-        data = self.MIDAS.capture_1d_trace(
-                            fn_start=self.fn_start,
-                            fn_stop=self.fn_stop)
-        return data
-
-    def reshape(self, data):
-        res = np.reshape(data, (8,self.pixels(),-1))
-        avg = np.average(res, axis=-1)
-        return avg
-
-    def arm_for_acquisition(self):
-        self.AWG.stop()
         
         self.AWG.start()
         time.sleep(0.05)
