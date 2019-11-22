@@ -107,7 +107,7 @@ class MidasMdacAwgParentRasterer(Instrument):
 
         self.add_parameter('pre_wait',
                             set_cmd=None,
-                            initial_value=1e-3,
+                            initial_value=1e-6,
                             vals=Numbers(min_value=0, max_value=0.1),
                             docstring="Duration of the 'wait' segment in the"
                             " applied sequence of sawtooths. It's purpose is to"
@@ -1046,6 +1046,12 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
                             " of the MDAC channel. After acquisition the channel"
                             " voltage is set back to the initial value.")
 
+        self.add_parameter('MDAC_divider',
+                            set_cmd=None,
+                            initial_value=1,
+                            vals=Numbers(min_value=1),
+                            docstring="Voltage divider to take into account")
+
         # only gettable
         self.add_parameter('samples_total',
                             get_cmd=self._get_samples_total)
@@ -1144,31 +1150,7 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
         pass
 
     def fn_start(self):
-        # get the MDAC channel
-        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
-        self.V_start = MDAC_ch.voltage()
-
-        # calculate measurement time:
-        ramps = self.ramps_per_buffer()
-        buffers = self.buffers_per_acquisition()
-        ramp_time = self.ramp_time_fast()
-        flushing_time = self.midas_buffer_flushing_time()
-
-        sweep_time = ramps*buffers*ramp_time
-        sweep_time += (buffers-1)*flushing_time
-
-        # calculate the rate of the MDAC sweep
-        self.ramp_rate = self.MDAC_Vpp()/sweep_time
-
-        # set the MDAC channel to the initial voltage
-        MDAC_ch.ramp(self.V_start - self.MDAC_Vpp()/2, ramp_rate=self.ramp_rate*5)
-        MDAC_ch.block()
-
-        # trigger AWG and start the MDAC ramp ASAP
-        # this order combined with ~10 ms pre-wait gives
-        # aynchronized start of the sweep and data acquisition
-        self.AWG.force_trigger()
-        MDAC_ch.ramp(self.V_start + self.MDAC_Vpp()/2, ramp_rate=self.ramp_rate)
+        self.MDAC.run()
 
     def fn_stop(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
@@ -1200,6 +1182,34 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
 
         return np.array(reshaped)
 
+    def arm_for_acquisition(self):
+        self.AWG.stop()
+
+        # get the MDAC channel
+        MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
+        self.V_start = MDAC_ch.voltage()
+
+        # calculate measurement time:
+        ramps = self.ramps_per_buffer()
+        buffers = self.buffers_per_acquisition()
+        ramp_time = self.ramp_time_fast()
+        flushing_time = self.midas_buffer_flushing_time()
+
+        sweep_time = ramps*buffers*ramp_time
+        sweep_time += (buffers-1)*flushing_time
+
+        # calculate the rate of the MDAC sweep
+        self.ramp_rate = self.MDAC_Vpp()/sweep_time
+
+        # 0.99/sweep_time frequency is minimally smaller to avoid
+        # problems with last pixel in case a few triggers are missed
+        MDAC_ch.awg_sawtooth(0.99/sweep_time, self.MDAC_Vpp()*self.MDAC_divider(), offset=self.V_start)
+        self.MDAC.stop()
+        self.MDAC.sync()
+
+        self.AWG.start()
+        time.sleep(0.1)
+
     def get_measurement_range(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
         self.V_start = MDAC_ch.voltage()
@@ -1212,103 +1222,6 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
                                  self.pixels())
 
         return AWG_range, MDAC_range
-
-########## Testing 2D rasterer with repeated capture_1d_trace ##########
-
-class MidasMdacAwg2DRasterer_test(MidasMdacAwg2DRasterer):
-
-    def __init__(self, name, MIDAS_name, MDAC_name, AWG_name, **kwargs):
-
-        super().__init__(name,
-                MIDAS_name, MDAC_name, AWG_name,
-                **kwargs)
-
-    def do_acquisition(self):
-        if self.buffers_per_acquisition() == 1:
-            data = [self.MIDAS.capture_1d_trace(
-                                    fn_start=self.fn_start,
-                                    fn_stop=self.fn_stop)]
-        else:
-            data = [self.MIDAS.capture_1d_trace(
-                                    fn_start=self.fn_start)]
-            for _ in range(self.buffers_per_acquisition()-2):
-                data.append(self.MIDAS.capture_1d_trace())
-            data.append(self.MIDAS.capture_1d_trace(
-                                    fn_stop=self.fn_stop))
-        return np.array(data)
-
-########## Testing 2D rasterer with single_shot mode ##########
-
-class MidasMdacAwg2DSingleShotRasterer(MidasMdacAwg2DRasterer):
-
-    def __init__(self, name, MIDAS_name, MDAC_name, AWG_name, **kwargs):
-
-        super().__init__(name,
-                MIDAS_name, MDAC_name, AWG_name,
-                **kwargs)
-
-    def _get_ramps_per_buffer(self):
-        return 1
-
-    def _get_buffers_per_acquisition(self):
-        return self.ramps_per_line()*self.lines_per_acquisition()
-
-    def prepare_AWG(self):
-        # use low AWG sampling rate, but not smaller than
-        # minimum 10 MS/s
-        AWG_sampling_rate = max(200/self.ramp_time_fast(), 10e6)
-
-        # generate a sequence to upload to AWG
-        self.sequence = single_sawtooth_many_triggers(self.AWG,
-                            AWG_sampling_rate,
-                            self.AWG_channel(),
-                            self.ramp_time_fast(),
-                            1,
-                            self.midas_buffer_flushing_time(),
-                            self.AWG_Vpp(),
-                            triggersPerFlush=1,
-                            trigger_ch=self.AWG_trigger_channel(),
-                            pre_wait=self.pre_wait())
-
-        # upload
-        package = self.sequence.outputForAWGFile()
-        AWGfile = self.AWG.make_awg_file(*package[:])
-
-        self.AWG.send_awg_file('raster',AWGfile)
-        self.AWG.load_awg_file('raster')
-
-        self.AWG.clock_freq(AWG_sampling_rate)
-
-        return self.sequence
-
-    def prepare_MIDAS(self):
-        self.MIDAS.sw_mode('single_shot')
-        self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition())
-        self.MIDAS.calibrate_latency()
-        self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
-
-    def prepare_MDAC(self):
-        pass
-        
-    def do_acquisition(self):
-        data = self.MIDAS.capture_2d_trace(
-                            fn_start=self.fn_start,
-                            fn_stop=self.fn_stop)
-        return np.array(data)
-
-    def reshape(self, data):
-        reshaped = []
-        for i in range(8):
-            d = data[:,i,:self.samples_per_ramp()]
-            res = np.reshape(d, (self.lines_per_acquisition(),
-                                self.ramps_per_line(),
-                                self.pixels_per_line(),
-                                -1))
-            avg = np.average(res, axis=1)
-            avg = np.average(avg, axis=-1)
-            reshaped.append(avg)
-
-        return np.array(reshaped)
 
 ######################################################################
 ########################## helper functions ##########################
