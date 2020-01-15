@@ -1,5 +1,8 @@
 from qcodes.plots.pyqtgraph import QtPlot
 from qcodes.instrument.base import Instrument
+from qcodes.dataset.measurements import Measurement
+
+from pytopo.qctools.dataset2 import select_experiment
 
 import ipywidgets as ipw
 
@@ -28,7 +31,7 @@ class LiveRasterPlotter():
                 plot_dict['plot'].win.close()
         self.plots = {}
 
-    def new_plots(self):
+    def new_plots(self, static_plots=False):
         # create new plots in a loop
         # for now only one plot per channel,
         # only for I quadrature
@@ -40,8 +43,10 @@ class LiveRasterPlotter():
                 plot_dict = {}
 
                 # make data containers
-                plot_dict['xvals'] = np.arange(0, self.rasterer.pixels_per_line())
-                plot_dict['yvals'] = np.arange(0, self.rasterer.lines_per_acquisition())
+                rng_X, rng_Y = self.rasterer.get_measurement_range()
+
+                plot_dict['xvals'] = rng_X
+                plot_dict['yvals'] = rng_Y
 
                 plot_dict['zvals'] = np.ones([self.rasterer.lines_per_acquisition(),
                                     self.rasterer.pixels_per_line()])
@@ -70,13 +75,16 @@ class LiveRasterPlotter():
                                          y=plot_dict['yvals'],
                                          z=plot_dict['zvals'],
                                          xlabel=xlabel,
-                                         xunit='arb. u.',
+                                         xunit='V',
                                          ylabel=ylabel,
-                                         yunit='arb. u.',
+                                         yunit='V',
                                          zlabel=plot_dict['name'],
                                          zunit=zunit)
 
-                self.plots[ch][q] = plot_dict
+                if static_plots:
+                    pass
+                else:
+                    self.plots[ch][q] = plot_dict
 
                 i += 1
 
@@ -128,6 +136,18 @@ class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self.add_parameter('station',
+                            set_cmd=None,
+                            initial_value=None,
+                            docstring="Station object needed for"
+                            " saving the data to Qcodes database.")
+
+        self.add_parameter('sample',
+                            set_cmd=None,
+                            initial_value=None,
+                            docstring="Sample name needed for"
+                            " saving the data to Qcodes database.")
+
     def create_control_panel(self):
 
         ####################### AWG widgets #######################
@@ -149,7 +169,15 @@ class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
                         description='Vpp (V):',
                         continuous_update=False)
         self.AWG_Vpp_select.observe(
-                        self.set_AWG_Vpp,
+                        lambda change: self.rasterer.AWG_Vpp(change['new']),
+                        'value')
+
+        self.AWG_resolution_select = ipw.Dropdown(
+                        options=[16,32,64,128,256],
+                        value=self.rasterer.pixels_per_line(),
+                        description='Resolution:')
+        self.AWG_resolution_select.observe(
+                        lambda change: self.rasterer.pixels_per_line(change['new']),
                         'value')
 
         self.AWG_divider_select = ipw.BoundedFloatText(
@@ -159,21 +187,24 @@ class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
                         description='Divider:',
                         continuous_update=False)
         self.AWG_divider_select.observe(
-                        self.set_AWG_Vpp,
+                        lambda change: self.rasterer.AWG_divider(change['new']),
                         'value')
 
-        self.AWG_resolution_select = ipw.Dropdown(
-                        options=[16,32,64,128],
-                        value=self.rasterer.pixels_per_line(),
-                        description='Resolution:')
-        self.AWG_resolution_select.observe(
-                        lambda change: self.rasterer.pixels_per_line(change['new']),
+        self.AWG_cutoff_select = ipw.BoundedFloatText(
+                        value=0,
+                        min=0, max=1e9,
+                        step=1,
+                        description='HP cutoff:',
+                        continuous_update=False)
+        self.AWG_cutoff_select.observe(
+                        lambda change: self.rasterer.high_pass_cutoff(change['new']),
                         'value')
 
         AWG_layout = ipw.VBox([self.AWG_channel_select,
                             self.AWG_Vpp_select,
                             self.AWG_resolution_select,
-                            self.AWG_divider_select])
+                            self.AWG_divider_select,
+                            self.AWG_cutoff_select])
 
         ####################### MDAC widgets #######################
 
@@ -219,34 +250,28 @@ class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
                         lambda change: self.rasterer.samples_per_pixel(change['new']),
                         'value')
 
-        # self.MIDAS_trigger_delay_select = ipw.BoundedIntText(
-        #                 value=self.rasterer.MIDAS.trigger_delay(),
-        #                 min=0, max=18e3,
-        #                 step=1,
-        #                 description='Trig. delay:',
-        #                 continuous_update=False)
-        # self.MIDAS_trigger_delay_select.observe(
-        #                 lambda change: self.rasterer.MIDAS.trigger_delay(change['new']),
-        #                 'value')
-
-        # self.MIDAS_channel_selectors = []
-        # for i in range(1,8):
-        #     checkbox = ipw.Checkbox(
-        #                 value=(i==1),
-        #                 description='Ch '+str(i),
-        #                 continuous_update=False)
-        #     checkbox.observe(
-        #                 self.set_MIDAS_channels,
-        #                 'value')
-        #     self.MIDAS_channel_selectors.append(checkbox)
-
-
-        # MIDAS_channel_box = ipw.GridBox(self.MIDAS_channel_selectors,
-        #                 layout=ipw.Layout(grid_template_columns="repeat(4, 60px)"))
-
         MIDAS_layout = ipw.VBox([self.averaging_select])
-                            # self.MIDAS_trigger_delay_select])
-                            # MIDAS_channel_box])
+
+        ####################### Saving #######################
+
+        self.saver_sample = ipw.Text(
+                            value=self.sample(),
+                            description='Sample:',
+                            disabled=True
+                        )
+
+        self.saver_experiment = ipw.Text(
+                            value="Fast_2D_map",
+                            description='Experiment:',
+                        )
+
+        self.saver_save_button = ipw.Button(
+                            description='Save')
+        self.measure_button.on_click(lambda c: self.save())
+        
+        saver_layout = ipw.VBox([self.saver_sample,
+                            self.saver_experiment,
+                            self.saver_save_button])        
 
         ####################### Buttons #######################
 
@@ -270,15 +295,18 @@ class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
                             self.measure_button,
                             self.notification_area])
 
+
         ####################### Combine layouts #######################
 
         main_tab_widget = ipw.Tab()
         main_tab_layouts = [AWG_layout,
                             MDAC_layout,
-                            MIDAS_layout]
+                            MIDAS_layout,
+                            saver_layout]
         main_tab_titles = ['AWG',
                             'MDAC',
-                            'MIDAS']
+                            'MIDAS',
+                            'Saving']
         main_tab_widget.children = main_tab_layouts
         for i, ttl in enumerate(main_tab_titles):
             main_tab_widget.set_title(i, ttl)
@@ -286,11 +314,6 @@ class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
         Main_layout = ipw.HBox([main_button_layout, main_tab_widget])
 
         return Main_layout
-
-    def set_AWG_Vpp(self, change):
-        Vpp = self.AWG_Vpp_select.value
-        divider = self.AWG_divider_select.value
-        self.rasterer.AWG_Vpp(Vpp*divider)
 
     def set_MIDAS_channels(self, change):
         channels = []
@@ -310,6 +333,9 @@ class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
         self.notification_area.value = 'Msmt time: '+str(t_meas)+' s'
 
 
+    def save(self):
+        experiment = select_experiment(experiment_name, sample)
+        measurement = Measurement(experiment, station)
 
 
 

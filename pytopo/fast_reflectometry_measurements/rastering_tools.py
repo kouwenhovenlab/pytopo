@@ -577,6 +577,7 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
             - samples_per_ramp
             - AWG_Vpp
             - AWG parameters
+            - high_pass_cutoff
             Executing 4 is NOT required if you change:
             - MIDAS_channels
             - Midas channel parameters
@@ -628,6 +629,14 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
                             " high-frequency lines. DC offset of the voltage"
                             " needs to be set separately with whatever"
                             " instrument you use for that.")
+
+        self.add_parameter('high_pass_cutoff',
+                            set_cmd=None,
+                            initial_value=0,
+                            vals=Numbers(min_value=0,max_value=1e9),
+                            docstring="Cut off frequency of the high pass filter"
+                            " which is to be compensated by predistorting"
+                            " the AWG waveform.")
 
         # only gettable
         self.add_parameter('samples_total',
@@ -693,6 +702,7 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
                             self.pixels(),
                             self.midas_buffer_flushing_time(),
                             self.AWG_Vpp(),
+                            high_pass_cutoff=self.high_pass_cutoff(),
                             trigger_ch=self.AWG_trigger_channel(),
                             pre_wait=self.pre_wait())
 
@@ -815,6 +825,8 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
         than 0.6 ms, but I found out that this is often not
         sufficient and recommend using 1 ms to reduce
         how often triggers are missed)
+    - high_pass_cutoff (specifies the cutoff frequency of
+        the high pass filter on the high frequency (AWG) line)
 
     The idea is that the user only needs to specify an averaging
     time per pixel, resolution and sawtooth period (constrained by
@@ -878,6 +890,7 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
             - samples_per_ramp
             - AWG_Vpp
             - AWG parameters
+            - high_pass_cutoff
             Executing 4 is NOT required if you change:
             - MDAC_channel
             - MDAC_Vpp
@@ -909,6 +922,14 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
                             initial_value=None,
                             vals=Ints(min_value=1,max_value=64),
                             docstring="MDAC channels to be sweeped.")
+
+        self.add_parameter('MDAC_channel_for_AWG',
+                            set_cmd=None,
+                            initial_value=None,
+                            vals=Ints(min_value=1,max_value=64),
+                            docstring="MDAC channel corresponding to the gate"
+                            " sweeped by AWG. Needed for axis scaling."
+                            )
 
         self.add_parameter('pixels_per_line',
                         set_cmd=None,
@@ -960,6 +981,20 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
                             initial_value=1,
                             vals=Numbers(min_value=1),
                             docstring="Voltage divider to take into account")
+
+        self.add_parameter('AWG_divider',
+                            set_cmd=None,
+                            initial_value=1,
+                            vals=Numbers(min_value=1),
+                            docstring="Voltage divider to take into account")
+
+        self.add_parameter('high_pass_cutoff',
+                            set_cmd=None,
+                            initial_value=0,
+                            vals=Numbers(min_value=0,max_value=1e9),
+                            docstring="Cut off frequency of the high pass filter"
+                            " which is to be compensated by predistorting"
+                            " the AWG waveform.")
 
         # only gettable
         self.add_parameter('samples_total',
@@ -1031,7 +1066,8 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
                             self.ramp_time_fast(),
                             self.pixels_per_line(),
                             self.midas_buffer_flushing_time(),
-                            self.AWG_Vpp(),
+                            self.AWG_Vpp()*self.AWG_divider(),
+                            high_pass_cutoff=self.high_pass_cutoff(),
                             trigger_ch=self.AWG_trigger_channel(),
                             pre_wait=self.pre_wait())
 
@@ -1125,11 +1161,16 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
         self.V_start = MDAC_ch.voltage()
         MDAC_range = np.linspace(self.V_start - self.MDAC_Vpp()/2,
                            self.V_start + self.MDAC_Vpp()/2,
-                           self.pixels())
+                           self.lines_per_acquisition())/self.MDAC_divider()
 
         AWG_range =  np.linspace(-self.AWG_Vpp()/2,
                                  self.AWG_Vpp()/2,
-                                 self.pixels())
+                                 self.pixels_per_line())
+
+        if self.MDAC_channel_for_AWG() is not None:
+            MDAC_ch_2 = self.MDAC.channels[self.MDAC_channel_for_AWG()-1]
+            AWG_range += MDAC_ch_2.voltage()
+
 
         return AWG_range, MDAC_range
 
@@ -1144,6 +1185,7 @@ def single_sawtooth_many_triggers(AWG,
                     triggersPerRamp,
                     flushingTime,
                     Vpp,
+                    high_pass_cutoff=None,
                     trigger_ch=1,
                     triggersPerFlush=2048,
                     pre_wait=None):
@@ -1246,6 +1288,11 @@ def single_sawtooth_many_triggers(AWG,
         sequence.setChannelOffset(trigger_ch, 0)
 
     sequence.setSR(sampling_rate)
+
+    if high_pass_cutoff is not None:
+        if high_pass_cutoff>0:
+            sequence.setChannelFilterCompensation(ch, 'HP',
+                            order=1, f_cut=high_pass_cutoff)
 
     return sequence
 
