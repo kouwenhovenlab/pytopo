@@ -1,3 +1,5 @@
+import qcodes as qc
+import os
 from qcodes.plots.pyqtgraph import QtPlot
 from qcodes.instrument.base import Instrument
 from qcodes.dataset.measurements import Measurement
@@ -53,14 +55,14 @@ class LiveRasterPlotter():
                 plot_dict['zvals'][:,:] = np.NaN
 
                 # create text for labels
-                xlabel = 'AWG channel '+str(self.rasterer.AWG_channel())
-                ylabel = 'MDAC channel '+str(self.rasterer.AWG_channel())
+                xlabel = 'AWG_channel_'+str(self.rasterer.AWG_channel())
+                ylabel = 'MDAC_channel_'+str(self.rasterer.MDAC_channel())
                 plot_dict['name'] = 'MIDAS channel '+str(ch)+'; '+str(q)
 
                 # create empty plots
                 plot_dict['plot'] = QtPlot(window_title=plot_dict['name'],
-                            figsize=(450, 300),
-                            fig_x_position=int(i/3)*0.25,
+                            figsize=(550, 300),
+                            fig_x_position=int(i/3)*0.3,
                             fig_y_position=(i%3)*0.315)
 
                 plot_dict['plot'].subplots[0].setTitle(plot_dict['name'],
@@ -265,12 +267,24 @@ class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
                             description='Experiment:',
                         )
 
+        self.saver_xlabel = ipw.Text(
+                            value="",
+                            description='X label',
+                        )
+
+        self.saver_ylabel = ipw.Text(
+                            value="",
+                            description='Y label:',
+                        )
+
         self.saver_save_button = ipw.Button(
                             description='Save')
-        self.measure_button.on_click(lambda c: self.save())
+        self.saver_save_button.on_click(lambda c: self.save())
         
         saver_layout = ipw.VBox([self.saver_sample,
                             self.saver_experiment,
+                            self.saver_xlabel,
+                            self.saver_ylabel,
                             self.saver_save_button])        
 
         ####################### Buttons #######################
@@ -334,8 +348,99 @@ class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
 
 
     def save(self):
-        experiment = select_experiment(experiment_name, sample)
-        measurement = Measurement(experiment, station)
+        # create a qcodes measurement object
+        experiment = select_experiment(self.saver_experiment.value,
+                                        self.sample())
+        measurement = Measurement(experiment, self.station())
+
+        # register the sweeped voltages as independent parameters
+        if self.saver_xlabel.value == '':
+            xname = 'AWG_channel_'+str(self.rasterer.AWG_channel())
+        else:
+            xname = self.saver_xlabel.value
+
+        if self.saver_ylabel.value == '':
+            yname = 'MDAC_channel_'+str(self.rasterer.MDAC_channel())
+        else:
+            yname = self.saver_ylabel.value
+
+        rng = self.rasterer.get_measurement_range()
+        rng_X, rng_Y = np.meshgrid(*rng)
+
+        measurement.register_custom_parameter(name=xname,
+                                            unit='V',
+                                            paramtype='array')
+
+        measurement.register_custom_parameter(name=yname,
+                                            unit='V',
+                                            paramtype='array')
+
+        # register the midas measurements as dependent parameters
+        # also get the data from plots
+        newline = []
+        for ch, quadratures in self.rasterer.MIDAS_channel_specs().items():
+            for q in quadratures:
+                zname = 'MIDAS_channel_'+str(ch)+'_'+str(q)
+                if q == 'P':
+                    unit = 'rad'
+                else:
+                    unit = 'arb. u.'
+                measurement.register_custom_parameter(name=zname,
+                                                unit=unit,
+                                                setpoints=[xname,yname],
+                                                paramtype='array')
+
+                newline.append((zname, self.plots[ch][q]['zvals']))
+
+        # "run" a measurement and save the data to the database
+        with measurement.run() as datasaver:
+            newline = [(xname, rng_X), (yname, rng_Y)]+newline
+            datasaver.add_result(*newline)
+
+            # get parameters for updating and saving a plot
+            run_id = datasaver._dataset.run_id
+            db_name = datasaver._dataset.path_to_db.split('\\')[-1].split('.')[0]
+            timestamp = datasaver._dataset.run_timestamp()
+            time = timestamp.split(' ')[1].replace(':','-')
+
+            title_list = []
+            title_list.append(str(run_id))
+            title_list.append(db_name)
+            title_list.append(timestamp)
+
+            # get directory to which plos should be saved
+            fmt = datasaver._dataset.path_to_db.split('.')[0]
+            fmt = fmt+'\\{date}\\{time}'
+            fmt = fmt.replace('\\', '/')
+            io = qc.DiskIO('.')
+            loc_provider = qc.data.location.FormatLocation(fmt=fmt)
+            directory_prefix = loc_provider(io)
+            directory_prefix = '/'.join(directory_prefix.split('/')[:-1])
+            try:
+                os.makedirs(directory_prefix)
+            except FileExistsError:
+                pass
+
+            # write the run id
+            self.notification_area.value = 'Data ID: ' + str(run_id)
+
+        # set plot titles
+        for ch, quadratures in self.rasterer.MIDAS_channel_specs().items():
+            for q in quadratures:
+                zname = 'MIDAS_channel_'+str(ch)+'_'+str(q)
+                self.plots[ch][q]['plot'].subplots[0].setTitle(', '.join([zname]+title_list))
+                self.plots[ch][q]['plot'].subplots[0].setLabels(bottom=xname,left=yname)
+
+                filename = '/'.join([directory_prefix,
+                                str(run_id)+'_'+time+'_'+zname+'.png'])
+                self.plots[ch][q]['plot'].save(filename=filename)
+
+        
+
+
+
+
+
 
 
 
