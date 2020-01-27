@@ -383,8 +383,8 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
     def prepare_MIDAS(self):
         self.MIDAS.sw_mode('single_point')
         self.MIDAS.single_point_num_avgs(self.saples_per_point())
-        self.MIDAS.calibrate_latency()
-        self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
+        # self.MIDAS.calibrate_latency()
+        # self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
 
     def prepare_MDAC(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
@@ -721,8 +721,8 @@ class MidasMdacAwg1DFastRasterer(MidasMdacAwgParentRasterer):
         self.MIDAS.sw_mode('single_point')
         self.MIDAS.single_point_num_avgs(self.samples_per_point())
         self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition())
-        self.MIDAS.calibrate_latency()
-        self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
+        # self.MIDAS.calibrate_latency()
+        # self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
 
     def prepare_MDAC(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
@@ -782,8 +782,8 @@ class MidasMdacAwg1DFastRasterer_test(MidasMdacAwg1DFastRasterer):
         self.MIDAS.single_point_num_avgs(self.samples_per_point())
         # adding +1 [WORKAROUND]
         self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition() + 1)
-        self.MIDAS.calibrate_latency()
-        self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
+        # self.MIDAS.calibrate_latency()
+        # self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
 
     def do_acquisition(self):
         data = self.MIDAS.capture_2d_trace(
@@ -1088,8 +1088,8 @@ class MidasMdacAwg2DRasterer(MidasMdacAwgParentRasterer):
 
         # +1 as a workaround for the Midas bug [WORKAROUND]
         self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition() + 1)
-        self.MIDAS.calibrate_latency()
-        self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
+        # self.MIDAS.calibrate_latency()
+        # self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
 
     def prepare_MDAC(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
@@ -1205,9 +1205,8 @@ def single_sawtooth_many_triggers(AWG,
                                     name='wait',
                                     dur=pre_wait)
     wait_element = bb.Element()
-    if ch != trigger_ch:
-        wait_element.addBluePrint(trigger_ch, wait_blueprint)
-    wait_element.addBluePrint(ch, wait_blueprint)
+    for c in range(1,5):
+        wait_element.addBluePrint(c, wait_blueprint)
 
     wait_element.validateDurations()
 
@@ -1215,6 +1214,12 @@ def single_sawtooth_many_triggers(AWG,
     sawtooth_blueprint = bb.BluePrint()
     sawtooth_blueprint.setSR(sampling_rate)
     sawtooth_blueprint.insertSegment(-1, ramp, (-Vpp/2, Vpp/2),
+                                name='ramp',
+                                dur=rampTime)
+
+    sawtooth_flat_blueprint = bb.BluePrint()
+    sawtooth_flat_blueprint.setSR(sampling_rate)
+    sawtooth_flat_blueprint.insertSegment(-1, ramp, (0, 0),
                                 name='ramp',
                                 dur=rampTime)
 
@@ -1233,9 +1238,14 @@ def single_sawtooth_many_triggers(AWG,
         sawtooth_trigger_blueprint.marker2 = [(pointTime*i, 200e-9) for i in range(triggersPerRamp)]
 
     sawtooth_element = bb.Element()
-    if ch != trigger_ch:
-        sawtooth_element.addBluePrint(trigger_ch, sawtooth_trigger_blueprint)
-    sawtooth_element.addBluePrint(ch, sawtooth_blueprint)
+    for c in range(1,5):
+        if c == ch:
+            sawtooth_element.addBluePrint(c, sawtooth_blueprint)
+        elif c == trigger_ch:
+            sawtooth_element.addBluePrint(c, sawtooth_trigger_blueprint)
+        else:
+            sawtooth_element.addBluePrint(c, sawtooth_flat_blueprint)
+        
 
     sawtooth_element.validateDurations()
 
@@ -1246,9 +1256,8 @@ def single_sawtooth_many_triggers(AWG,
                                     name='wait',
                                     dur=flushingTime)
     flush_element = bb.Element()
-    if ch != trigger_ch:
-        flush_element.addBluePrint(trigger_ch, flush_blueprint)
-    flush_element.addBluePrint(ch, flush_blueprint)
+    for c in range(1,5):
+        flush_element.addBluePrint(c, flush_blueprint)
 
     flush_element.validateDurations()
 
@@ -1278,14 +1287,10 @@ def single_sawtooth_many_triggers(AWG,
     sequence.setSequencingGoto(elem_num,2)
     elem_num += 1
 
-    ch_amp = AWG['ch'+str(ch)+'_amp']()
-    sequence.setChannelAmplitude(ch, ch_amp)
-    sequence.setChannelOffset(ch, 0)
-
-    if ch != trigger_ch:
-        ch_amp = AWG['ch'+str(trigger_ch)+'_amp']()
-        sequence.setChannelAmplitude(trigger_ch, ch_amp)
-        sequence.setChannelOffset(trigger_ch, 0)
+    for c in range(1,5):
+        ch_amp = AWG['ch'+str(c)+'_amp']()
+        sequence.setChannelAmplitude(c, ch_amp)
+        sequence.setChannelOffset(c, 0)
 
     sequence.setSR(sampling_rate)
 

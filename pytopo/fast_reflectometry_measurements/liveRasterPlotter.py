@@ -183,8 +183,8 @@ class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
                         'value')
 
         self.AWG_divider_select = ipw.BoundedFloatText(
-                        value=1,
-                        min=1, max=20,
+                        value=self.rasterer.AWG_divider(),
+                        min=1, max=100,
                         step=0.1,
                         description='Divider:',
                         continuous_update=False)
@@ -193,7 +193,7 @@ class LiveRasterPlotter_GUI(LiveRasterPlotter, Instrument):
                         'value')
 
         self.AWG_cutoff_select = ipw.BoundedFloatText(
-                        value=0,
+                        value=self.rasterer.high_pass_cutoff(),
                         min=0, max=1e9,
                         step=1,
                         description='HP cutoff:',
