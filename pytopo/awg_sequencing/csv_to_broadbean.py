@@ -107,10 +107,40 @@ def params_to_blueprint(label, time, typ, params, M1, M2,):
     bp = bb.BluePrint()
 
     for l, t, tp, p, m1, m2 in zip(label, time, typ, params, M1, M2):
+        # check if net_zero element is used
+        if l == 'net_zero':
+            break
+
         bp.insertSegment(-1, segment_dict[tp], p, name=l, dur=t)
         if m1:
             bp.setSegmentMarker(l, (0,t), 1)
         if m2:
             bp.setSegmentMarker(l, (0,t), 2)
+    else:
+        return bp
+
+    # forge a dummy sequence to calculate the voltage integral
+    SR = 1e9
+    elem = bb.Element()
+    bp.setSR(SR)
+    elem.addBluePrint(1, bp)
+    seq = bb.Sequence()
+    seq.addElement(1, elem)
+    seq.setSR(SR)
+    forged_seq = seq.forge(includetime=True,
+                            apply_delays=False,
+                            apply_filters=False)
+
+    # extract the waveform from the forget sequence
+    waveform = forged_seq[1]['content'][1]['data'][1]['wfm']
+    # calculate the waveform integral
+    integ = np.sum(waveform)/SR
+
+    # calculate the voltage needed to achieve net zero
+    v = -integ / t
+
+    # insert the correcting segment
+    p = (v,v)
+    bp.insertSegment(-1, segment_dict['ramp'], p, name=l, dur=t)
     
     return bp
