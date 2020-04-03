@@ -133,6 +133,50 @@ def params_to_blueprint(label, time, typ, params, M1, M2,):
 
     return bp
 
+
+############# SEQUENCING FUNCTIONS #############
+
+def build_sequence(base_files, keywords, channels, segments, values,
+            triggers, repeats, gotos, SR=1e9):
+    
+    # create an empty sequency
+    seq = bb.Sequence()
+    seq.setSR(SR)
+
+    zp = zip(base_files, keywords, channels, segments, values, triggers, repeats, gotos)
+    for i, (b, k, c, s, v, t, r, g) in enumerate(zp):
+        el = csv_to_element(b, SR=SR)
+        el = modify_element(el, k, c, s, v)
+
+        # apply correction if segment labeled 'net_zero'
+        # is specified
+        if 'net_zero' in el._data[1]['blueprint']._namelist:
+            el = make_element_net_zeto(el)
+
+        # add a one and only element
+        seq.addElement(i+1, el)
+        seq.setSequencingTriggerWait(i+1, t)
+        seq.setSequencingNumberOfRepetitions(i+1, r)
+        seq.setSequencingGoto(i+1, g)
+
+    return seq
+
+def single_keyword_sequence_table(filename, keyword='', channel=None, segment=None, values=[]):
+    length = len(values)
+    base_files = [filename]*(length+1)
+    keywords = ['no_marker'] + [keyword]*length
+    channels = [None] + [channel]*length
+    segments = [segment]*(length+1)
+    triggers = [1] + [0]*length
+    repeats = [10] + [1]*length
+    gotos = [0]*length + [2]
+
+    return base_files, keywords, channels, segments, values, triggers, repeats, gotos
+
+
+
+############# ELEMENT MODIFIERS #############
+
 def make_element_net_zeto(el, channels=[1,2,3,4]):
     # reset correcting segment to 0
 
@@ -169,6 +213,29 @@ def make_element_net_zeto(el, channels=[1,2,3,4]):
 
     return el
 
-############# ELEMENT MODIFIER #############
+def modify_element(el, keyword, channel, segment, value):
+    # do not modify
+    if keyword == 'pass':
+        pass
 
+    # case for changing a segment duration
+    elif keyword == 'duration':
+        for ch in range(1,5):
+            el.changeDuration(ch, segment, value)
 
+    # case for changing a segment duration
+    elif keyword == 'no_marker':
+        for name in el._data[1]['blueprint']._namelist: 
+            for ch in range(1,5):
+                el._data[ch]['blueprint'].removeSegmentMarker(name,1)
+                el._data[ch]['blueprint'].removeSegmentMarker(name,2)
+
+    elif keyword == 'level':
+        el = modify_element(el, 'start', channel, segment, value)
+        el = modify_element(el, 'stop', channel, segment, value)
+
+    # by default use a broadbean changeArg function
+    else:
+        el.changeArg(channel, segment, keyword, value)
+
+    return el
