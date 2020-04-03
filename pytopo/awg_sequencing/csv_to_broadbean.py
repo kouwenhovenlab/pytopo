@@ -1,17 +1,17 @@
 import pandas as pd
 import broadbean as bb
 import numpy as np
+from copy import deepcopy
 
 segment_dict = {'ramp': bb.PulseAtoms.ramp,
                 'sine': bb.PulseAtoms.sine,
                 'gaussian': bb.PulseAtoms.gaussian}
 
+############# SINGLE PULSE FUNCTIONS #############
+
 def csv_to_element(filename, SR=1e9):
     # load csv file
-    df = pd.read_csv(filename)
-
-    # convert columns of the dataframe to the correct format
-    df = convert_dataframe_columns(df)
+    df = csv_to_dataframe(filename)
 
     # make bluprints
     blueprints = []
@@ -41,6 +41,11 @@ def upload_one_element_sequence(el, AWG, SR=1e9, high_pass_cutoff=[None]*4):
     # set sampling rate
     seq.setSR(SR)
     AWG.clock_freq(SR)
+
+    # apply correction if segment labeled 'net_zero'
+    # is specified
+    if 'net_zero' in el._data[1]['blueprint']._namelist:
+        el = make_element_net_zeto(el)
     
     # add a one and only element
     seq.addElement(1, el)
@@ -69,8 +74,16 @@ def upload_one_element_sequence(el, AWG, SR=1e9, high_pass_cutoff=[None]*4):
     AWG.send_awg_file('single_pulse',AWGfile)
     AWG.load_awg_file('single_pulse')
 
+############# HELPER FUNCTIONS #############
 
+def csv_to_dataframe(filename):
+    # load csv file
+    df = pd.read_csv(filename)
 
+    # convert columns of the dataframe to the correct format
+    df = convert_dataframe_columns(df)
+
+    return df
 
 # convert columns of the dataframe to the correct format
 def convert_dataframe_columns(df):
@@ -86,10 +99,10 @@ def convert_dataframe_columns(df):
     df['CH4_type'] = df['CH4_type'].apply(str)
 
     # Segment parameters are lists of floats
-    df['CH1_params'] = df['CH1_params'].apply(lambda x: tuple([float(y) for y in x.split(', ')]))
-    df['CH2_params'] = df['CH2_params'].apply(lambda x: tuple([float(y) for y in x.split(', ')]))
-    df['CH3_params'] = df['CH3_params'].apply(lambda x: tuple([float(y) for y in x.split(', ')]))
-    df['CH4_params'] = df['CH4_params'].apply(lambda x: tuple([float(y) for y in x.split(', ')]))
+    df['CH1_params'] = df['CH1_params'].apply(lambda x: [float(y) for y in x.split(',')])
+    df['CH2_params'] = df['CH2_params'].apply(lambda x: [float(y) for y in x.split(',')])
+    df['CH3_params'] = df['CH3_params'].apply(lambda x: [float(y) for y in x.split(',')])
+    df['CH4_params'] = df['CH4_params'].apply(lambda x: [float(y) for y in x.split(',')])
     
     # Markers during segments are booleans
     df['CH1_M1'] = df['CH1_M1'].apply(bool)
@@ -109,38 +122,53 @@ def params_to_blueprint(label, time, typ, params, M1, M2,):
     for l, t, tp, p, m1, m2 in zip(label, time, typ, params, M1, M2):
         # check if net_zero element is used
         if l == 'net_zero':
-            break
+            # break
+            pass
 
-        bp.insertSegment(-1, segment_dict[tp], p, name=l, dur=t)
+        bp.insertSegment(-1, segment_dict[tp], tuple(p), name=l, dur=t)
         if m1:
             bp.setSegmentMarker(l, (0,t), 1)
         if m2:
             bp.setSegmentMarker(l, (0,t), 2)
-    else:
-        return bp
 
-    # forge a dummy sequence to calculate the voltage integral
-    SR = 1e9
-    elem = bb.Element()
-    bp.setSR(SR)
-    elem.addBluePrint(1, bp)
+    return bp
+
+def make_element_net_zeto(el, channels=[1,2,3,4]):
+    # reset correcting segment to 0
+
+    t_total = el.duration
+    SR = el.SR
+    for ch in channels:
+        el.changeArg(ch, 'net_zero', 'start', 0)
+        el.changeArg(ch, 'net_zero', 'stop', 0)
+        el.changeDuration(ch, 'net_zero', 10/SR)
+    t_uncorrected = el.duration - 10/SR
+    t_net_zero = t_total-t_uncorrected
+
+    # forge single-element sequence
     seq = bb.Sequence()
-    seq.addElement(1, elem)
-    seq.setSR(SR)
+    seq.addElement(1, el)
+    seq.setSR(el.SR)
     forged_seq = seq.forge(includetime=True,
                             apply_delays=False,
                             apply_filters=False)
 
-    # extract the waveform from the forget sequence
-    waveform = forged_seq[1]['content'][1]['data'][1]['wfm']
-    # calculate the waveform integral
-    integ = np.sum(waveform)/SR
+    # extract waveform for each channel
+    # and adjust amplitude of the compenstaing segment
+    for ch in channels: 
+        # extract the waveform from the forget sequence
+        waveform = forged_seq[1]['content'][1]['data'][ch]['wfm']
+        # calculate the waveform integral
+        integ = np.sum(waveform)/SR
+        # calculate the voltage needed to achieve net zero
+        v = -integ / t_net_zero
 
-    # calculate the voltage needed to achieve net zero
-    v = -integ / t
+        el.changeArg(ch, 'net_zero', 'start', v)
+        el.changeArg(ch, 'net_zero', 'stop', v)
+        el.changeDuration(ch, 'net_zero', t_net_zero)
 
-    # insert the correcting segment
-    p = (v,v)
-    bp.insertSegment(-1, segment_dict['ramp'], p, name=l, dur=t)
-    
-    return bp
+    return el
+
+############# ELEMENT MODIFIER #############
+
+
