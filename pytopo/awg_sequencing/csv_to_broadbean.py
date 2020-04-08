@@ -45,7 +45,7 @@ def upload_one_element_sequence(el, AWG, SR=1e9, high_pass_cutoff=[None]*4):
     # apply correction if segment labeled 'net_zero'
     # is specified
     if 'net_zero' in el._data[1]['blueprint']._namelist:
-        el = make_element_net_zeto(el)
+        el = make_element_net_zero(el)
     
     # add a one and only element
     seq.addElement(1, el)
@@ -151,7 +151,7 @@ def build_sequence(base_files, keywords, channels, segments, values,
         # apply correction if segment labeled 'net_zero'
         # is specified
         if 'net_zero' in el._data[1]['blueprint']._namelist:
-            el = make_element_net_zeto(el)
+            el = make_element_net_zero(el)
 
         # add a one and only element
         seq.addElement(i+1, el)
@@ -177,7 +177,7 @@ def single_keyword_sequence_table(filename, keyword='', channel=None, segment=No
 
 ############# ELEMENT MODIFIERS #############
 
-def make_element_net_zeto(el, channels=[1,2,3,4]):
+def make_element_net_zero(el, channels=[1,2,3,4]):
     # reset correcting segment to 0
 
     t_total = el.duration
