@@ -9,8 +9,45 @@ import broadbean as bb
 import pytopo.awg_sequencing.csv_to_broadbean as csv
 
 class MidasTektronixSequencer(Instrument):
+    """
+    Meta instrument for preparing pulse sequences and controlling
+    MIDAS and Tektronix 5014c.
+
+    It includes functions for programmating building of pulse
+    sequence in which a single parameter is varied.
+
+    Examples:
+        Configure correction for attenuation and distortions:
+            > sequencer.high_pass_cutoff_ch_2(1.7e3)
+            > sequencer.high_pass_cutoff_ch_4(1.7e3)
+            > sequencer.divider_ch_2(22.2)
+            > sequencer.divider_ch_4(21.4)
+
+        Generate a sequence based on a csv file:
+            > sequencer.single_keyword_sequence('./pulses/sequence_measurement_testing.csv',
+                                  'level', 4, 'A', np.linspace(-10e-3,10e-3,64))
+            > sequencer.prepare_for_acquisition()
+            > sequencer.samples_per_point(32)
+            > sequencer.sequence_repetitions(512)
+
+        Run a measurement 'by hand':
+            > d = sequencer.arm_acquire_reshape()
+    """
 
     def __init__(self, name, MIDAS_name, AWG_name, **kwargs):
+        """
+        Create a MidasTektronixSequencer instance
+
+        Args:
+            name (str): rasterer instrument name
+            MIDAS_name (str): name of the Midas to be used
+            MDAC_name (str): name of the MDAC to be used
+            AWG_name (str): name of the Tektronix 5014 to be used
+            **kwargs: other kwargs passed to Instrument init
+
+        Returns:
+            MidasTektronixSequencer
+        """
 
         super().__init__(name, **kwargs)
 
@@ -18,9 +55,8 @@ class MidasTektronixSequencer(Instrument):
         self.SAMPLE_TIME = (1/1.8e9)*512 # 284.44 ns
         self.POINTS_PER_BUFFER = 2048
 
-        # UNCOMMENT ME!!!
-        # self.MIDAS = self.find_instrument(MIDAS_name)
-        # self.AWG = self.find_instrument(AWG_name)
+        self.MIDAS = self.find_instrument(MIDAS_name)
+        self.AWG = self.find_instrument(AWG_name)
 
         self.add_parameter('samples_per_point',
                         set_cmd=None,
@@ -43,7 +79,7 @@ class MidasTektronixSequencer(Instrument):
         self.add_parameter('sequence_repetitions',
                         set_cmd=None,
                         initial_value=32,
-                        vals=Ints(1,2048),
+                        vals=Ints(1,2e15),
                         docstring="Number of steps in a sequence"
                         " during which a measurement is performed.")
 
@@ -77,28 +113,44 @@ class MidasTektronixSequencer(Instrument):
         self.AWG.ch3_state(1)
         self.AWG.ch4_state(1)
 
+    def AWG_channels_off(self):
+        self.AWG.ch1_state(0)
+        self.AWG.ch2_state(0)
+        self.AWG.ch3_state(0)
+        self.AWG.ch4_state(0)
+
     def prepare_for_acquisition(self):
         self.prepare_AWG()
         self.AWG_channels_on()
         self.prepare_MIDAS()
-        self.prepare_MDAC()
+
+    def arm_acquire_reshape(self):
+        self.arm_for_acquisition()
+        time.sleep(1e-3)
+        data = self.do_acquisition()
+        self.data_raw = data
+        # return data
+        data = self.reshape(data)
+        return data
 
     def prepare_AWG(self):
+        """
+        Uploads preprepared broadbean sequence to AWG.
+        Applies scaling of the waveform based on divider parameters.
+        """
+
         package = self.sequence.outputForAWGFile()
-
         # scale the waveforms based on the dividers
-        for i in range(len(package._channels)):
+        for i in range(len(package._channels[0]['wfms'])):
             for j in range(4):
-                package._channels[i]['wfms'][j] *= self['divider_ch_{}'.format(j+1)]()
+                package._channels[j]['wfms'][i] *= self['divider_ch_{}'.format(j+1)]()
 
+        AWGfile = self.AWG.make_awg_file(*package[:])
 
-        # UNCOMMENT
-        return package
+        self.AWG.send_awg_file('sequence_1D',AWGfile)
+        self.AWG.load_awg_file('sequence_1D')
 
-        # AWGfile = self.AWG.make_awg_file(*package[:])
-
-        # self.AWG.send_awg_file('sequence_1D',AWGfile)
-        # self.AWG.load_awg_file('sequence_1D')
+        self.AWG.clock_freq(self.sequence.SR)
 
     def prepare_MIDAS(self):
         self.MIDAS.sw_mode('single_point')
@@ -111,6 +163,10 @@ class MidasTektronixSequencer(Instrument):
         self.AWG.stop()
 
     def arm_for_acquisition(self):
+        """
+        Stop and start the execution of the sequence by
+        the Tektronix to run it from the first sequence element.
+        """
         self.AWG.stop()
         self.AWG.start()
 
@@ -123,13 +179,15 @@ class MidasTektronixSequencer(Instrument):
         no_of_acquisitions = np.ceil(self._get_points_total() / self.POINTS_PER_BUFFER)
 
         data = []
-        for i in range(no_of_acquisitions):
+        for i in range(int(no_of_acquisitions)):
             if i>0:
                 self.arm_for_acquisition()
                 time.sleep(0.01)
             data += [self.MIDAS.capture_1d_trace(
                                 fn_start=self.fn_start,
                                 fn_stop=self.fn_stop)]
+
+        return np.array(data)
 
     def reshape(self, data):
         reshaped = []
@@ -204,8 +262,8 @@ class MidasTektronixSequencer(Instrument):
 
         for c in range(1,5):
             # UNCOMMENT (change amplitude to good values, not 1 V)
-            # ch_amp = AWG['ch'+str(c)+'_amp']()
-            seq.setChannelAmplitude(c, 1)
+            ch_amp = self.AWG['ch'+str(c)+'_amp']()
+            seq.setChannelAmplitude(c, ch_amp)
             seq.setChannelOffset(c, 0)
 
             if self['high_pass_cutoff_ch_{}'.format(c)]()>0:
@@ -215,6 +273,24 @@ class MidasTektronixSequencer(Instrument):
         self.sequence = seq
 
     def single_keyword_sequence(self, filename, keyword='', channel=None, segment=None, values=[]):
+        """
+        Prepares broadbean sequence based on a csv file
+        specyfying a base element, and modifying it according to
+        the provided keyword, channel and segment label.
+
+        Args:
+            filename (str):directory and name of the base csv file
+            keyword (str): keyword according to which the base file is
+                supposed to be configured by self.modify_element
+            channel (int/None): number of the AWG channel to be modified
+                according to the keyword. Some keywords do not require
+                specyfying a channel or ignore it.
+            segment (str/None): label of the element segment to be modified
+                according to the keyword. Some keywords do not require
+                specyfying a segment or ignore it.
+            values (list/1d array): values passed self.modify_element
+                indicating how to modify an element 
+        """
         length = len(values)
         self.measurements_per_sequence(length)
         self._measurement_range = values
@@ -223,8 +299,15 @@ class MidasTektronixSequencer(Instrument):
         channels = [None] + [channel]*length
         segments = [segment]*(length+1)
         triggers = [1] + [0]*length
-        repeats = [10] + [1]*length
+        repeats = [5] + [1]*length
         gotos = [0]*length + [2]
+
+        el = csv.csv_to_element(filename, SR=1e9)
+        if 'net_zero' in el._data[1]['blueprint']._namelist:
+                el = make_element_net_zero(el)
+        self.base_element = el
+
+        values = [0] + list(values)
 
         self.sequence_from_keyword_sequence_table(base_files,
                 keywords, channels, segments, values,
@@ -233,6 +316,22 @@ class MidasTektronixSequencer(Instrument):
 ############# ELEMENT MODIFIERS #############
 
 def make_element_net_zero(el, channels=[1,2,3,4]):
+    """
+    Function for modyfying an element to make the mean voltage zero,
+    in order to avoid DC offset in how the pulse is applied and
+    to avoid dissipation of power on the bias-tee.
+
+    Segment labeled 'net_zero' is identified. It's duration
+    is unchanged but the applied voltage is adjusted to ensure
+    mean zero voltage.
+
+    Args:
+        el (Element): element to be modified
+        channels (list): list of channels to be made net-zero
+
+    Returns:
+        modified element
+    """
     
     # reset correcting segment to 0
     t_total = el.duration
@@ -269,7 +368,7 @@ def make_element_net_zero(el, channels=[1,2,3,4]):
     return el
 
 def modify_element(el, keyword, channel, segment, value):
-    # do not modify
+    # do-not-modify keyword
     if keyword == 'pass':
         pass
 
@@ -285,6 +384,8 @@ def modify_element(el, keyword, channel, segment, value):
                 el._data[ch]['blueprint'].removeSegmentMarker(name,1)
                 el._data[ch]['blueprint'].removeSegmentMarker(name,2)
 
+    # adjust the broadbean ramp element to have identical start
+    # and stop point
     elif keyword == 'level':
         el = modify_element(el, 'start', channel, segment, value)
         el = modify_element(el, 'stop', channel, segment, value)

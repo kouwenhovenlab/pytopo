@@ -85,7 +85,7 @@ class MidasMdacAwgParentRasterer(Instrument):
         self.add_parameter('samples_per_pixel',
                         set_cmd=None,
                         initial_value=32,
-                        vals=Ints(1,8192),
+                        vals=Ints(1,2**15),
                         docstring="Number of 284.44 ns-long samples to"
                         " be averaged to get a single data pixel."
                         " Must be a power of 2.")
@@ -211,6 +211,12 @@ class MidasMdacAwgParentRasterer(Instrument):
         self.AWG.ch2_state(1)
         self.AWG.ch3_state(1)
         self.AWG.ch4_state(1)
+
+    def AWG_channels_off(self):
+        self.AWG.ch1_state(0)
+        self.AWG.ch2_state(0)
+        self.AWG.ch3_state(0)
+        self.AWG.ch4_state(0)
 
     def prepare_for_acquisition(self):
         self.prepare_AWG()
@@ -433,7 +439,7 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
         self.MDAC.sync()
 
         self.AWG.start()
-        time.sleep(0.05)
+        time.sleep(0.04)
 
 
     def get_measurement_range(self):
