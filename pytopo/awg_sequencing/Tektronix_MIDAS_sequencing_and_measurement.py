@@ -79,7 +79,7 @@ class MidasTektronixSequencer(Instrument):
         self.add_parameter('sequence_repetitions',
                         set_cmd=None,
                         initial_value=32,
-                        vals=Ints(1,2e15),
+                        vals=Ints(1,int(2e15)),
                         docstring="Number of steps in a sequence"
                         " during which a measurement is performed.")
 
@@ -272,7 +272,8 @@ class MidasTektronixSequencer(Instrument):
 
         self.sequence = seq
 
-    def single_keyword_sequence(self, filename, keyword='', channel=None, segment=None, values=[]):
+    def single_keyword_sequence(self, filename, keyword='',
+                channel=None, segment=None, values=[], SR=1e9):
         """
         Prepares broadbean sequence based on a csv file
         specyfying a base element, and modifying it according to
@@ -311,7 +312,7 @@ class MidasTektronixSequencer(Instrument):
 
         self.sequence_from_keyword_sequence_table(base_files,
                 keywords, channels, segments, values,
-                triggers, repeats, gotos)
+                triggers, repeats, gotos, SR=SR)
 
 ############# ELEMENT MODIFIERS #############
 
@@ -368,6 +369,8 @@ def make_element_net_zero(el, channels=[1,2,3,4]):
     return el
 
 def modify_element(el, keyword, channel, segment, value):
+    ############# ESSENTIAL KEYWORD MODIFIERS #############
+
     # do-not-modify keyword
     if keyword == 'pass':
         pass
@@ -389,6 +392,24 @@ def modify_element(el, keyword, channel, segment, value):
     elif keyword == 'level':
         el = modify_element(el, 'start', channel, segment, value)
         el = modify_element(el, 'stop', channel, segment, value)
+
+    ############# CUSTOM KEYWORD MODIFIERS #############
+
+    elif keyword == 'detuning':
+        r_L, r_R = 1,1
+        ratio_L = r_L/np.sqrt(r_L**2 + r_R**2)
+        ratio_R = r_R/np.sqrt(r_L**2 + r_R**2)
+
+        # left gate
+        el = modify_element(el, 'start', 2, segment, value*ratio_L)
+        el = modify_element(el, 'stop', 2, segment, value*ratio_L)
+
+        # right gate
+        el = modify_element(el, 'start', 4, segment, -value*ratio_R)
+        el = modify_element(el, 'stop', 4, segment, -value*ratio_R)
+
+
+    ############# FALLBACK TO BROADBEAN #############
 
     # by default use a broadbean changeArg function
     else:

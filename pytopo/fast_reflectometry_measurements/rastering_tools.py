@@ -439,7 +439,7 @@ class MidasMdacAwg1DSlowRasterer(MidasMdacAwgParentRasterer):
         self.MDAC.sync()
 
         self.AWG.start()
-        time.sleep(0.04)
+        time.sleep(0.05)
 
 
     def get_measurement_range(self):
