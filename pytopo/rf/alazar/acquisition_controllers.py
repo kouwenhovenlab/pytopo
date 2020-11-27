@@ -365,7 +365,7 @@ class RawAcqCtl(BaseAcqCtl):
 
 
 class PostDemodCtl(BaseAcqCtl):
-
+ 
     _datadtype = np.int32
 
     def __init__(self, *arg, **kw):
@@ -425,19 +425,19 @@ class PostDemodCtl(BaseAcqCtl):
 
         if self._nbits == 12:
             data = np.right_shift(data, 4)        
-        data = ((data.astype(np.float32) / (2**self._nbits)) - 0.5) * 2 * rng
+
+        data = data.astype(np.float32) - 0.5*(2**self._nbits)
+
+        data = (data * (self.cosarr + 1j*self.sinarr))[:, :, :, :self.demod_samples*self.period,:].reshape(
+            self._nblocks, -1, self.records_per_buffer(), self.demod_samples, 
+                self.period, self.number_of_channels).mean(axis=-2)
+
+        data *=  2*2*rng/(2**self._nbits)
+
         if self.average_buffers():
-            data /= self.buffers_per_acquisition()
+            data / self.buffers_per_acquisition()
             data *= self._nblocks
 
-        real = (data * 2 * self.cosarr)[:, :, :, :self.demod_samples*self.period,:].reshape(
-            self._nblocks, -1, self.records_per_buffer(), self.demod_samples, 
-                self.period, self.number_of_channels).mean(axis=-2)
-        imag = (data * 2 * self.sinarr)[:, :, :, :self.demod_samples*self.period,:].reshape(
-            self._nblocks, -1, self.records_per_buffer(), self.demod_samples, 
-                self.period, self.number_of_channels).mean(axis=-2)
-        data = real + 1j * imag
-        
         if self.reference_channel() is not None:
             shp = list(data.shape)
             shp[-1] = 1

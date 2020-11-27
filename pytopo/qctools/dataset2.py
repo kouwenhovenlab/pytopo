@@ -8,7 +8,12 @@ import qcodes as qc
 from qcodes.dataset.data_set import DataSet
 from qcodes.dataset.experiment_container import load_experiment_by_name, \
     new_experiment
-from qcodes.dataset.sqlite_base import transaction, one
+
+try:
+    from qcodes.dataset.sqlite_base import transaction, one
+except ModuleNotFoundError:
+    from qcodes.dataset.sqlite.connection import transaction
+    from qcodes.dataset.sqlite.query_helpers import one
 
 
 def select_experiment(exp_name, sample_name):

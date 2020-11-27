@@ -16,6 +16,7 @@ class HeterodyneSource(Instrument):
         self.LO = LO
         
         self.add_parameter('IF', set_cmd=None, initial_value=20e6)
+        
         self.add_parameter('frequency', unit='Hz',
                            get_cmd=self.RF.frequency, 
                            set_cmd=self._set_freq)
