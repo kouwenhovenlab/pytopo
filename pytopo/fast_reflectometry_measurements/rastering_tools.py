@@ -783,14 +783,6 @@ class MidasMdacAwg1DFastRasterer_test(MidasMdacAwg1DFastRasterer):
                 MIDAS_name, MDAC_name, AWG_name,
                 **kwargs)
 
-    def prepare_MIDAS(self):
-        self.MIDAS.sw_mode('single_point')
-        self.MIDAS.single_point_num_avgs(self.samples_per_point())
-        # adding +1 [WORKAROUND]
-        self.MIDAS.num_sweeps_2d(self.buffers_per_acquisition() + 1)
-        # self.MIDAS.calibrate_latency()
-        # self.MIDAS.trigger_delay(self.MIDAS.trigger_delay())
-
     def do_acquisition(self):
         data = self.MIDAS.capture_2d_trace(
                             fn_start=self.fn_start,
