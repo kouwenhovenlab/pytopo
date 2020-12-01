@@ -24,6 +24,25 @@ def _rescale(out, data, n_bits, scale0, scale1):
             scaled = prefactor1 * nb.float32(np.right_shift(data[idx_datum], shift_by)) - scale1
         out[idx_datum] = scaled
 
+def rescale_8bit(out, data, n_bits, scale0, scale1):
+    np.require(out, requirements=['C', 'W'])
+    np.require(data, requirements=['C'])
+    _rescale_8bit(out.ravel(), data.ravel(), n_bits, scale0, scale1)
+
+@nb.jit(nb.void(nb.float32[:], nb.uint8[:], nb.int64, nb.float32, nb.float32), nopython=True, cache=True)
+def _rescale_8bit(out, data, n_bits, scale0, scale1):
+    shift_by = 8 - n_bits
+    two_by_n = 1 / (2.0 ** (n_bits - 1))
+    prefactor0 = scale0 * two_by_n
+    prefactor1 = scale1 * two_by_n
+    # Rely on Numba JITing loops.
+    for idx_datum in range(len(data)):
+        if idx_datum % 2 == 0:
+            scaled = prefactor0 * nb.float32(np.right_shift(data[idx_datum], shift_by)) - scale0
+        else:
+            scaled = prefactor1 * nb.float32(np.right_shift(data[idx_datum], shift_by)) - scale1
+        out[idx_datum] = scaled
+
 # @nb.vectorize([
 #     nb.float32(nb.uint16, nb.int64, nb.float32)
 # ])
@@ -341,7 +360,11 @@ class RawAcqCtl(BaseAcqCtl):
         float_data = np.empty_like(data, dtype=np.float32)
 
         # View 
-        rescale(float_data, data, self._nbits, rng[0], rng[1])
+        if self._nbits == 12:
+            rescale(float_data, data, self._nbits, rng[0], rng[1])
+        elif self._nbits == 8:
+            rescale_8bit(float_data, data, self._nbits, rng[0], rng[1])
+            
         
         # for idx_rng in range(2):
         #     import pdb; pdb.set_trace()
@@ -374,6 +397,7 @@ class PostDemodCtl(BaseAcqCtl):
         self.post_acquire_time = 0
 
         self.add_parameter('demod_frq', set_cmd=None, initial_value=1e6)
+        self.add_parameter('average_buffers_postdemod', set_cmd=None, initial_value=False)
 
     def setup_acquisition(self, *arg, **kw):
         demod_frq = kw.pop('demod_frq', None)
@@ -444,6 +468,8 @@ class PostDemodCtl(BaseAcqCtl):
             ref_phase = np.angle(data[..., self.reference_channel()]).reshape(tuple(shp))
             data = data * np.exp(-1j * ref_phase)
 
+        if self.average_buffers_postdemod() is True:
+            data = data.mean(axis=1, keepdims=True)
         self.post_acquire_time = time.perf_counter() - t0
         return data
 
