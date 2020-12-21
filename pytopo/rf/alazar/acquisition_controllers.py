@@ -31,16 +31,15 @@ def rescale_8bit(out, data, n_bits, scale0, scale1):
 
 @nb.jit(nb.void(nb.float32[:], nb.uint8[:], nb.int64, nb.float32, nb.float32), nopython=True, cache=True)
 def _rescale_8bit(out, data, n_bits, scale0, scale1):
-    shift_by = 8 - n_bits
     two_by_n = 1 / (2.0 ** (n_bits - 1))
     prefactor0 = scale0 * two_by_n
     prefactor1 = scale1 * two_by_n
     # Rely on Numba JITing loops.
     for idx_datum in range(len(data)):
         if idx_datum % 2 == 0:
-            scaled = prefactor0 * nb.float32(np.right_shift(data[idx_datum], shift_by)) - scale0
+            scaled = prefactor0 * nb.float32(data[idx_datum]) - scale0
         else:
-            scaled = prefactor1 * nb.float32(np.right_shift(data[idx_datum], shift_by)) - scale1
+            scaled = prefactor1 * nb.float32(data[idx_datum]) - scale1
         out[idx_datum] = scaled
 
 # @nb.vectorize([
