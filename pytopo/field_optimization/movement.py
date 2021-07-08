@@ -1,11 +1,15 @@
 import time
 import numpy as np
-from typing import Callable, Optional, TypeVar, Tuple, Union, Dict, Any
+from typing import Callable, Optional, TypeVar, Tuple, Union, Dict, Any, Awaitable
 from typing_extensions import Final
 from pytopo.field_optimization.typing import GettableParameter, HasField, ControlsField, ParameterProtocol
 from qcodes.math.field_vector import FieldVector
+from qcodes.utils.async_utils import sync
 from contextlib import contextmanager
 import matplotlib.pyplot as plt
+
+import asyncio
+from threading import Thread
 
 T = TypeVar('T')
 Interval = Tuple[T, T]
@@ -60,7 +64,6 @@ class FieldOptimizationProblem(object):
         self.objective = objective
         self.objective_uncertainty = objective_uncertainty
 
-    
     def set_field(self,
                   target_field : FieldVector,
                   n_steps : int = 10,
@@ -69,7 +72,27 @@ class FieldOptimizationProblem(object):
                   observer_fn : Optional[Callable[[FieldVector], None]] = None,
                   verbose : bool = False,
                   threshold : float = 1e-6
-                 ) -> None:
+                  ) -> None:
+        task = self.set_field_async(
+            target_field=target_field,
+            n_steps=n_steps,
+            absolute=absolute,
+            ramp_rate=ramp_rate,
+            observer_fn=observer_fn,
+            verbose=verbose,
+            threshold=threshold
+        )
+        return sync(task)
+
+    async def set_field_async(self,
+                              target_field : FieldVector,
+                              n_steps : int = 10,
+                              absolute : bool = True,
+                              ramp_rate : float = 1e-3,
+                              observer_fn : Optional[Callable[[FieldVector], None]] = None,
+                              verbose : bool = False,
+                              threshold : float = 1e-6
+                              ) -> None:
         """
         Sets the field controlled by this problem's instrument to a
         given target field by taking small steps, measuring, and then
@@ -124,27 +147,27 @@ class FieldOptimizationProblem(object):
                 if verbose:
                     print(f"Setting field target to {intermediate_target.repr_spherical()}")
                 self.instrument.field_target(intermediate_target)
-                self.instrument.ramp()
+                await self.instrument.ramp_async()
 
                 time.sleep(0.1)
                 current = self.instrument.field_measured()
                 if observer_fn is not None:
                     observer_fn(current)
                 update(current)
-                time.sleep(0.1)
+                await asyncio.sleep(0.1)
 
         finish()
 
-    def optimize_at_fixed_magnitude(self,
-                                    r : float,
-                                    phi_range : Interval[float], n_phi : int,
-                                    theta_range : Interval[float], n_theta : int,
-                                    return_extra : bool = False,
-                                    n_steps : int = 5,
-                                    plot : bool = False,
-                                    verbose : bool = False,
-                                    ramp_rate : float = 1.5e-3
-                                    ) -> OptionalExtra[FieldVector]:
+    async def optimize_at_fixed_magnitude(self,
+                                          r : float,
+                                          phi_range : Interval[float], n_phi : int,
+                                          theta_range : Interval[float], n_theta : int,
+                                          return_extra : bool = False,
+                                          n_steps : int = 5,
+                                          plot : bool = False,
+                                          verbose : bool = False,
+                                          ramp_rate : float = 1.5e-3
+                                          ) -> OptionalExtra[FieldVector]:
         """
         Given the magnitude of a magnetic field, maximizes the objective
         over the spherical coordinates phi and theta by an exhaustive
@@ -189,7 +212,7 @@ class FieldOptimizationProblem(object):
             nearest = min(still_to_visit, key=current.distance)
             still_to_visit.remove(nearest)
             print(f"Evaluating at phi = {nearest.phi}, theta = {nearest.theta}")
-            self.set_field(
+            await self.set_field_async(
                 nearest,
                 absolute=True, n_steps=n_steps, ramp_rate=ramp_rate,
                 observer_fn=observe,
@@ -210,7 +233,7 @@ class FieldOptimizationProblem(object):
         
         # Move the field before returning.
         print(f"Found optimum for |B| = {r} at ({optimum.phi}, {optimum.theta}).")
-        self.set_field(optimum, absolute=True)
+        await self.set_field_async(optimum, absolute=True)
         
         
         if plot:
@@ -233,16 +256,16 @@ class FieldOptimizationProblem(object):
         else:
             return optimum
 
-    def optimize_and_ramp_magnitude(self,
-                                    initial_r : float, final_r : float, n_r_steps: int,
-                                    initial_phi : float, phi_window : float, n_phis : int,
-                                    initial_theta : float, theta_window : float, n_thetas : int,
-                                    reoptimization_threshold : float = 0.5,
-                                    n_steps : int = 5,
-                                    ramp_rate : float = 1e-3,
-                                    return_extra : bool = False,
-                                    verbose : bool = False
-                                   ) -> OptionalExtra[FieldVector]:
+    async def optimize_and_ramp_magnitude(self,
+                                          initial_r : float, final_r : float, n_r_steps: int,
+                                          initial_phi : float, phi_window : float, n_phis : int,
+                                          initial_theta : float, theta_window : float, n_thetas : int,
+                                          reoptimization_threshold : float = 0.5,
+                                          n_steps : int = 5,
+                                          ramp_rate : float = 1e-3,
+                                          return_extra : bool = False,
+                                          verbose : bool = False
+                                         ) -> OptionalExtra[FieldVector]:
         """
         Ramps the magnitude of a magnetic field from a given start point,
         optimizing the objective by exhaustive search at each increment in
@@ -287,7 +310,7 @@ class FieldOptimizationProblem(object):
         extra = {}
 
         print("Moving to initial field vector...")
-        self.set_field(FieldVector(r=initial_r, phi=initial_phi, theta=initial_theta), absolute=True)
+        await self.set_field_async(FieldVector(r=initial_r, phi=initial_phi, theta=initial_theta), absolute=True)
         
         rs = np.linspace(initial_r, final_r, n_r_steps)
         
@@ -301,12 +324,10 @@ class FieldOptimizationProblem(object):
         for r in rs:
             print(f"Optimizing at |B| = {r}...")
             current = self.instrument.field_measured()
-            self.set_field(
-                FieldVector(r=r, theta=current.theta, phi=current.phi),
-                absolute=True,
-                n_steps=n_steps, ramp_rate=ramp_rate,
-                verbose=verbose
-            )
+            await self.set_field_async(FieldVector(r=r, phi=current.phi, theta=current.theta), 
+                                       absolute=True, n_steps=n_steps, ramp_rate=ramp_rate,
+                                       verbose=verbose)
+
             
             current_objective = self.objective()
             current_uncertainty = self.objective_uncertainty()
@@ -325,7 +346,7 @@ class FieldOptimizationProblem(object):
                 else:
                     print(f"Current and previous objectives differ by {scaled_distance} line widths, thus re-optimizing.")
             
-            current_best = self.optimize_at_fixed_magnitude(
+            current_best = await self.optimize_at_fixed_magnitude(
                 r,
                 (current.phi - phi_window / 2, current.phi + phi_window / 2), n_phis,
                 (current.theta - theta_window / 2, current.theta + theta_window / 2), n_thetas,

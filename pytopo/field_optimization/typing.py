@@ -24,3 +24,6 @@ class ControlsField(HasField, Protocol):
     
     def ramp(self) -> None:
         pass
+
+    async def ramp_async(self) -> None:
+        pass
