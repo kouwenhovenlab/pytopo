@@ -44,13 +44,13 @@ class MidasUhfliParentRasterer(Instrument):
                             " the set X, Y, R, P which stand for"
                             " (I, Q, Amplitude or Phase).")
 
-        self.add_parameter('bandwidth',
+        self.add_parameter('time_constant',
                         set_cmd=None,
-                        initial_value=1e3,
-                        vals=Ints(1,2**15),
-                        docstring="Bandwidth of the UHFLI filter."
+                        initial_value=1e-3,
+                        vals=Numbers(1e-6,1),
+                        docstring="Time constant of the UHFLI filter."
                         " This is roughly equivalent to the integraton time."
-                        " Total sweep time uses 1.2/bandwidth as a time per point.")
+                        " Total sweep time uses 3*time_constant as a time per point.")
 
         # only gettable
         self.add_parameter('UHFLI_channels',
@@ -159,7 +159,7 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
 
     #################### Get functions ###################
     def _get_sweep_time(self):
-        return self.npts()/self.bandwidth()*1.2
+        return self.npts()*self.time_constant()*3
 
     ################### Other functions ###################
 
@@ -173,13 +173,13 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
         
         # Set oscillators and demodulation
         for ch in self.UHFLI_channel_specs().keys():
-            uhfli.demods[ch+1].timeconstant(1/self.bandwidth())
-            uhfli.demods[ch+1].rate(5/self.bandwidth())
-            uhfli.demods[ch+1].oscselect(ch)
+            self.UHFLI.demods[ch-1].timeconstant(self.time_constant())
+            self.UHFLI.demods[ch-1].rate(5/self.time_constant())
+            self.UHFLI.demods[ch-1].oscselect(ch-1)
 
 
         # Set DAQ
-        self.daq_module = uhfli._controller._controller._connection._daq.dataAcquisitionModule()
+        self.daq_module = self.UHFLI._controller._controller._connection._daq.dataAcquisitionModule()
         self.daq_module.set("device", self.UHFLI_serial)
 
         # subscribe to relevant channels (select chanels and quadratures)
@@ -188,7 +188,6 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
             for q in quadratures:
                 if q == 'P':
                     signal = f'/{self.UHFLI_serial:s}/demods/{ch-1}/sample.theta'
-                    theta
                 else:
                     signal = f'/{self.UHFLI_serial:s}/demods/{ch-1}/sample.{q}'
                 self.signals.append(signal)
@@ -196,7 +195,7 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
 
         # Trigger settings
             # Signal
-        self.daq_module.set('triggernode',f'/{serial:s}/demods/0/sample.TrigIn1')
+        self.daq_module.set('triggernode',f'/{self.UHFLI_serial:s}/demods/0/sample.TrigIn1')
             # Type, 6 = hardware trigger
         self.daq_module.set('type',6)
             # Edge, 1=positive
@@ -246,6 +245,9 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
         MDAC_ch.ramp(self.V_start, ramp_rate=self.ramp_rate*5)
         MDAC_ch.voltage(self.V_start)
 
+        self.daq_module.finish()
+        self.daq_module.unsubscribe('*')
+
     def do_acquisition(self):
         """
         Executes a MIDAS capture method
@@ -258,11 +260,8 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
         while not self.daq_module.finished():
             time.sleep(0.01)
 
-        self.daq_module.finish()
-        self.daq_module.unsubscribe('*')
-
         results = self.daq_module.read(True)
-        data = np.array([results[str.lower(signal)][0]['value'][0] for signal in signals])
+        data = np.array([results[str.lower(signal)][0]['value'][0] for signal in self.signals])
 
         return data
 
