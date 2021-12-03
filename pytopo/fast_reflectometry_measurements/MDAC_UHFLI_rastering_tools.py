@@ -10,7 +10,7 @@ import time
 ##################################################################
 
 
-class MidasUhfliParentRasterer(Instrument):
+class MdacUhfliParentRasterer(Instrument):
     """
     Parent class to the 1DSlow, 1DFast and 2D rasterers
     """
@@ -43,6 +43,17 @@ class MidasUhfliParentRasterer(Instrument):
                             " Valuses are strings, up to 4 letters from"
                             " the set X, Y, R, P which stand for"
                             " (I, Q, Amplitude or Phase).")
+
+        self.add_parameter('UHFLI_phase_offsets',
+                            set_cmd=None,
+                            initial_value={i:0 for i in range(1,9)},
+                            docstring="Add a phase offset when measuring phase"
+                            " WARNING! Phase offset is not added when measuring X or Y!")
+
+        self.add_parameter('UHFLI_trigger_channel',
+                            set_cmd=None,
+                            initial_value=1,
+                            docstring="")
 
         self.add_parameter('time_constant',
                         set_cmd=None,
@@ -117,7 +128,7 @@ class MidasUhfliParentRasterer(Instrument):
 ##################################################################
 
 
-class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
+class MdacUhfli1DRasterer(MdacUhfliParentRasterer):
 
     def __init__(self, name, UHFLI_name, MDAC_name, **kwargs):
 
@@ -171,11 +182,16 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
         server, which should be changed whenever possible.
         """
         
+        for c in range(8):
+            self.UHFLI.sigouts[0][f'enables{c}'](0)
+
         # Set oscillators and demodulation
         for ch in self.UHFLI_channel_specs().keys():
             self.UHFLI.demods[ch-1].timeconstant(self.time_constant())
             self.UHFLI.demods[ch-1].rate(5/self.time_constant())
             self.UHFLI.demods[ch-1].oscselect(ch-1)
+            self.UHFLI.sigouts[0][f'enables{ch-1}'](1)
+
 
 
         # Set DAQ
@@ -195,7 +211,7 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
 
         # Trigger settings
             # Signal
-        self.daq_module.set('triggernode',f'/{self.UHFLI_serial:s}/demods/0/sample.TrigIn1')
+        self.daq_module.set('triggernode',f'/{self.UHFLI_serial:s}/demods/0/sample.TrigIn{self.UHFLI_trigger_channel()}')
             # Type, 6 = hardware trigger
         self.daq_module.set('type',6)
             # Edge, 1=positive
@@ -208,6 +224,8 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
 
         # Configure Grid trab
         self.daq_module.set('grid/mode',2)   # linear
+        #self.daq_module.set('grid/mode',4)   # exact
+        #self.daq_module.set('grid/mode',1)   # nearest
         self.daq_module.set("grid/cols",self.npts())
         self.daq_module.set("grid/rows",1)
         self.daq_module.set("duration", self.sweep_time())
@@ -232,6 +250,8 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
         MDAC_ch.awg_sawtooth(1/self.sweep_time(), self.MDAC_Vpp()*self.MDAC_divider(), offset=self.V_start)
         self.MDAC.stop()
 
+    def arm(self):
+        pass
 
     def fn_start(self):
         """
@@ -239,6 +259,9 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
         just after telling UHFLI to wait for triggers
         """
         self.MDAC.run()
+
+    def end(self):
+        pass
 
     def finalize(self):
         MDAC_ch = self.MDAC.channels[self.MDAC_channel()-1]
@@ -248,11 +271,16 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
         self.daq_module.finish()
         self.daq_module.unsubscribe('*')
 
+        for ch in self.UHFLI_channel_specs().keys():
+            self.UHFLI.sigouts[0][f'enables{ch-1}'](0)
+
     def do_acquisition(self):
         """
-        Executes a MIDAS capture method
+        Executes a UHFLI capture method
         and returns an ndarray with the data.
         """
+        self.arm()
+
         self.daq_module.execute()
 
         self.fn_start()
@@ -262,6 +290,17 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
 
         results = self.daq_module.read(True)
         data = np.array([results[str.lower(signal)][0]['value'][0] for signal in self.signals])
+
+        # adjust a phase whn phase is meanured (nut not X or Y)
+        row_counter = 0
+        for ch, quadratures in self.UHFLI_channel_specs().items():
+            for q in quadratures:
+                if q == 'P':
+                    data[row_counter] = np.mod(data[row_counter]-self.UHFLI_phase_offsets()[ch], 2*np.pi)
+                row_counter += 1
+
+
+        self.end()
 
         return data
 
@@ -273,3 +312,98 @@ class MidasUhfli1DRasterer(MidasUhfliParentRasterer):
         return np.linspace(self.V_start/self.MDAC_divider() - self.MDAC_Vpp()/2,
                            self.V_start/self.MDAC_divider() + self.MDAC_Vpp()/2,
                            self.npts())
+
+##################################################################
+################ 1D multigate MDAC/UHFLI rasterer ################
+##################################################################
+
+class MdacUhfli1DMultichanRasterer(MdacUhfli1DRasterer):
+
+    def __init__(self, name, UHFLI_name, MDAC_name, **kwargs):
+
+        super().__init__(name,
+                UHFLI_name, MDAC_name,
+                **kwargs)
+
+        self.add_parameter('MDAC_channel_dict',
+                                set_cmd=None,
+                                initial_value=None,
+                                vals=Dict(),
+                                docstring="Dictionary that specifies"
+                                    " MDAC channels and amplitudes."
+                                    " Format: {ch1: Vpp1, ch2: Vpp2}"
+                                    " where ch# is int anf Vpp# is float")
+
+        self.add_parameter('range_scaling',
+                            set_cmd=None,
+                            initial_value=1,
+                            vals=Numbers(),
+                            docstring="Set scaling of the measurement axis."
+                                "The returned range will be"
+                                " Vpp*range_scaling + range_offset"
+                                " where Vpp corresponds to a channel with"
+                                " the smallest number.")
+
+        self.add_parameter('range_offset',
+                            set_cmd=None,
+                            initial_value=0,
+                            vals=Numbers(),
+                            docstring="Set offset of the measurement axis."
+                                "The returned range will be"
+                                " Vpp*range_scaling + range_offset"
+                                " where Vpp corresponds to a channel with"
+                                " the smallest number.")
+
+
+    def prepare_MDAC(self):
+        """
+        Sets up the MDAC to do the acquisition.
+        """
+        # use channel with the smallest number to trigger on
+        ch = min(self.MDAC_channel_dict().keys())
+
+        MDAC_ch = self.MDAC.channels[ch-1]
+        MDAC_ch.attach_trigger()
+
+
+    def arm(self):
+
+        # set waveform on all channels
+        self.V_start = {}
+        for ch, Vpp in self.MDAC_channel_dict().items():
+            # get the MDAC channel
+            MDAC_ch = self.MDAC.channels[ch-1]
+            V_start = MDAC_ch.voltage()
+
+            # save initial values
+            self.V_start[ch] = V_start
+
+            if Vpp>0:
+                MDAC_ch.awg_sawtooth(1/self.sweep_time(), Vpp*self.MDAC_divider(), offset=V_start)
+            else:
+                MDAC_ch.awg_sawtooth_falling(1/self.sweep_time(), -Vpp*self.MDAC_divider(), offset=V_start)
+        
+
+        self.MDAC.stop()
+        self.MDAC.sync()
+
+    def end(self):
+        for ch, v in self.V_start.items():
+            # get the MDAC channel
+            MDAC_ch = self.MDAC.channels[ch-1]
+            MDAC_ch.voltage(v)
+
+
+    def get_measurement_range(self):
+        ch = min(self.MDAC_channel_dict().keys())
+        Vpp = self.MDAC_channel_dict()[ch]
+        scaling = self.range_scaling()
+        offset = self.range_offset()
+
+        return np.linspace(-Vpp*scaling/2+offset,
+                           Vpp*scaling/2+offset,
+                           self.npts())
+
+    def finalize(self):
+        pass
+
