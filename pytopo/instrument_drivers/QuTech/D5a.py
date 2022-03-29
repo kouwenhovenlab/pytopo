@@ -114,7 +114,7 @@ class D5a(Instrument):
         return self.d5a.set_voltage(dac, value / self._gain)
 
     def _get_dac(self, dac):
-        return self._gain * self.d5a.voltages[dac]
+        return self._gain * self.d5a.get_settings(dac)[0]
 
     def _get_span(self, dac):
         return self._span_get_map[self.d5a.span[dac]]
